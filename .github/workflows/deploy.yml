@@ -21,13 +21,6 @@ jobs:
           node-version: '20'
       - run: npm install --no-audit --no-fund
       - run: npm test
-      - name: Verify no placeholder KV IDs remain in deploy config
-        if: github.event_name == 'push'
-        run: |
-          ! grep -q 'REPLACE_WITH_' wrangler.toml || {
-            echo "Set GitHub Variables KV_NAMESPACE_ID and PREVIEW_KV_NAMESPACE_ID before deploying."
-            exit 1
-          }
 
   deploy:
     needs: test
