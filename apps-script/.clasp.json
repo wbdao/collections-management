@@ -1,0 +1,21 @@
+{
+  "scriptId": "1eAit884xBXPD0nF5MB8lMlC_JQ-xuaZS3Dzwm1XYRjNKRtGIhKRXUoJr",
+  "rootDir": ".",
+  "scriptExtensions": [
+    ".gs",
+    ".js"
+  ],
+  "htmlExtensions": [
+    ".html"
+  ],
+  "filePushOrder": [
+    "constants.gs",
+    "config.gs",
+    "data/tables.gs",
+    "utils/errors.gs",
+    "utils/helpers.gs",
+    "utils/response.gs",
+    "repository/sheets-adapter.gs"
+  ],
+  "skipSubdirectories": false
+}

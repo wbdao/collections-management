@@ -1,0 +1,14 @@
+{
+  "name": "collections-management-phase1",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Phase 1 of the Collections Management System on Cloudflare Pages + Apps Script",
+  "scripts": {
+    "dev": "wrangler pages dev frontend --kv KV",
+    "deploy": "wrangler pages deploy frontend",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "^3.60.0"
+  }
+}

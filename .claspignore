@@ -1,0 +1,9 @@
+# CLASP allowlist. Patterns are evaluated relative to rootDir ("apps-script").
+# Push ONLY the Apps Script manifest and every .gs file (including subfolders).
+**/**
+!appsscript.json
+!**/*.gs
+
+# Defensive exclusions; never upload dependencies or VCS metadata.
+.git/**
+node_modules/**

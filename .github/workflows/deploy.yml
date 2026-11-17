@@ -1,0 +1,75 @@
+name: Test and deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: collections-pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - name: Verify no placeholder KV IDs remain in deploy config
+        if: github.event_name == 'push'
+        run: |
+          ! grep -q 'REPLACE_WITH_' wrangler.toml || {
+            echo "Set GitHub Variables KV_NAMESPACE_ID and PREVIEW_KV_NAMESPACE_ID before deploying."
+            exit 1
+          }
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+
+      - name: Inject KV namespace IDs from GitHub Variables
+        env:
+          KV_ID: ${{ vars.KV_NAMESPACE_ID }}
+          PREVIEW_KV_ID: ${{ vars.PREVIEW_KV_NAMESPACE_ID }}
+        run: |
+          test -n "$KV_ID" || { echo "Missing GitHub Variable KV_NAMESPACE_ID"; exit 1; }
+          test -n "$PREVIEW_KV_ID" || { echo "Missing GitHub Variable PREVIEW_KV_NAMESPACE_ID"; exit 1; }
+          sed -i "s|REPLACE_WITH_KV_NAMESPACE_ID|$KV_ID|" wrangler.toml
+          sed -i "s|REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID|$PREVIEW_KV_ID|" wrangler.toml
+          ! grep -q 'REPLACE_WITH_' wrangler.toml
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy frontend --project-name=collections-management --branch=main
+          secrets: |
+            GAS_URL
+            GAS_SHARED_SECRET
+            JWT_PRIVATE_KEY
+            JWT_PUBLIC_KEY
+            JWT_ISSUER
+            JWT_AUDIENCE
+            BOOTSTRAP_TOKEN
+        env:
+          GAS_URL: ${{ secrets.GAS_URL }}
+          GAS_SHARED_SECRET: ${{ secrets.GAS_SHARED_SECRET }}
+          JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY }}
+          JWT_PUBLIC_KEY: ${{ secrets.JWT_PUBLIC_KEY }}
+          JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
+          JWT_AUDIENCE: ${{ secrets.JWT_AUDIENCE }}
+          BOOTSTRAP_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN }}

@@ -1,0 +1,23 @@
+# Apps Script Web App exec URL (never exposed to the browser)
+GAS_URL=https://script.google.com/macros/s/REPLACE/exec
+GAS_SHARED_SECRET=replace-with-a-long-random-secret
+
+# RS256 key pair. Generate with:
+# openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt_private.pem
+# openssl rsa -in jwt_private.pem -pubout -out jwt_public.pem
+# Convert PEM newlines to literal \n when storing as CF secrets.
+JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
+JWT_ISSUER=cms-api
+JWT_AUDIENCE=cms-web
+
+# One-time bootstrap secret for POST /api/v1/admin/bootstrap
+BOOTSTRAP_TOKEN=replace-with-another-long-random-secret
+
+# NOTE: Google Sheet IDs are Apps Script SCRIPT PROPERTIES, not Cloudflare vars.
+# Set these in the Apps Script project (Project Settings > Script Properties):
+#   GAS_SHARED_SECRET                 = same value as above
+#   CUSTOMER_MASTER_SPREADSHEET_ID    = ID of the customer master spreadsheet
+#   CUSTOMER_MASTER_SHEET_NAME        = قاعده عملاء الشركه  (optional, this is the default)
+#   SPREADSHEET_ID                    = operational workbook ID (optional, has a default)
+#   BOOTSTRAP_ADMIN_PASSWORD          = strong admin password (MUST be changed in production)

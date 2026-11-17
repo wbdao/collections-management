@@ -1,0 +1,21 @@
+name = "collections-management"
+compatibility_date = "2026-11-17"
+pages_build_output_dir = "frontend"
+
+# Deploy with: npm run deploy
+# Required Cloudflare Pages secrets (set with `wrangler pages secret put`):
+#   GAS_URL, GAS_SHARED_SECRET, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY,
+#   JWT_ISSUER, JWT_AUDIENCE, BOOTSTRAP_TOKEN
+# See DEPLOYMENT.md for the full checklist.
+
+[vars]
+ENVIRONMENT = "production"
+API_BASE = "/api/v1"
+
+# Replace both IDs with real KV namespace IDs before deploying.
+# Create them with: wrangler kv namespace create CMS_KV
+#                  wrangler kv namespace create CMS_KV --preview
+[[kv_namespaces]]
+binding = "KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"

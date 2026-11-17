@@ -1,0 +1,9 @@
+# CLASP allowlist for this self-contained Apps Script project (rootDir = ".").
+# Push ONLY the manifest and every .gs file, including services/, repository/,
+# data/ and utils/ subfolders. No manual file creation is required.
+**/**
+!appsscript.json
+!**/*.gs
+
+.git/**
+node_modules/**
