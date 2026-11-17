@@ -45,20 +45,9 @@ jobs:
           ! grep -q 'REPLACE_WITH_' wrangler.toml
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy frontend --project-name=collections-management --branch=main
-          secrets: |
-            GAS_URL
-            GAS_SHARED_SECRET
-            JWT_PRIVATE_KEY
-            JWT_PUBLIC_KEY
-            JWT_ISSUER
-            JWT_AUDIENCE
-            BOOTSTRAP_TOKEN
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           GAS_URL: ${{ secrets.GAS_URL }}
           GAS_SHARED_SECRET: ${{ secrets.GAS_SHARED_SECRET }}
           JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY }}
@@ -66,3 +55,19 @@ jobs:
           JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
           JWT_AUDIENCE: ${{ secrets.JWT_AUDIENCE }}
           BOOTSTRAP_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN }}
+        run: |
+          # The project must exist before Pages secrets can be uploaded.
+          npx wrangler pages project create collections-management --production-branch main || true
+
+          # Build a JSON file of secrets for the Pages-specific bulk command.
+          node -e '
+            const fs = require("fs");
+            const keys = ["GAS_URL","GAS_SHARED_SECRET","JWT_PRIVATE_KEY","JWT_PUBLIC_KEY","JWT_ISSUER","JWT_AUDIENCE","BOOTSTRAP_TOKEN"];
+            const out = {};
+            for (const k of keys) out[k] = process.env[k] || "";
+            fs.writeFileSync("pages-secrets.json", JSON.stringify(out));
+          '
+          npx wrangler pages secret bulk pages-secrets.json --project-name=collections-management
+          rm -f pages-secrets.json
+
+          npx wrangler pages deploy frontend --project-name=collections-management --branch=main
