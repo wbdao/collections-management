@@ -6,3 +6,6 @@ dist/
 
 # CLASP OAuth credentials (never commit; .clasp.json is safe to commit)
 .clasprc.json
+
+jwt_private.pem
+jwt_public.pem
