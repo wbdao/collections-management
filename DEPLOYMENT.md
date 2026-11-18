@@ -424,16 +424,23 @@ Expected (counts vary on re-run):
 - Apps Script HEAD was restored to clean repository code with `clasp push
   --force` after temporary diagnostics; production `@17` was never changed.
 
-### Open items
+### Final operational state
 
-- **Daily alert-scan trigger is not installed.** The Apps Script Triggers page
-  shows `0` triggers. Install once from the editor:
-  `installDailyScanTrigger()` (daily 01:00 UTC `dailyScanTrigger`). There is
-  intentionally **no** customer-master scan trigger — the master is read live
-  with a 5-minute CacheService TTL (`customer:{Account}`).
-- Mutation flows (create/transition/audit-log insertion) have not been run
-  against production to avoid writing test records into the live workbook.
-  Run them in a sandbox copy or with explicit approval, then inspect
-  `tbl_audit_logs` / `tbl_integration_errors`.
-- Temporary Apps Script deployments `@9`–`@15` can be archived/removed;
-  keep `@17` as the single public Web App deployment.
+- **Daily alert-scan trigger installed and verified.** The Triggers page shows
+  exactly one trigger: `dailyScanTrigger`, time-based, daily at 01:00 UTC, on
+  the main deployment. There is intentionally **no** customer-master scan
+  trigger — the master is read live with a 5-minute CacheService TTL
+  (`customer:{Account}`).
+- **Temporary Apps Script deployments archived.** All temporary active
+  deployments (`@9`, `@10`, `@12`, `@13`, `@15`, plus related untitled ones)
+  were archived. Only deployment `@17` remains active, with public access
+  `أي شخص`; its ID and URL are unchanged. No new `clasp deploy` was run.
+- Mutation flows (create/transition/audit-log insertion) were intentionally
+  **not** run against production, to avoid writing test records into the live
+  business workbook. If required later, run them in a sandbox copy or with
+  explicit approval, then inspect `tbl_audit_logs` /
+  `tbl_integration_errors`.
+- Final production recheck after the trigger/deployment cleanup: `health`,
+  `auth/me`, `dashboard/summary`, `dashboard/custody`, both customer
+  autocomplete variants and `customers/CUST020208` all returned 200;
+  `track/BOOK/NO-SUCH` returned the expected 404.
