@@ -54,11 +54,19 @@ export async function callGas(env, ctx, action, entity, payload = {}) {
   const signature = await sign(body, env.GAS_SHARED_SECRET);
   let lastError = null;
 
+  // Apps Script Web Apps do not reliably expose custom request headers to
+  // doPost(e) — e.postData.headers is often empty after Google's redirect
+  // proxy. Query parameters, however, always arrive via e.parameter. Keep the
+  // X-Signature header as defence in depth, but make the query parameter the
+  // authoritative channel for the HMAC signature.
+  const gasUrl = new URL(env.GAS_URL);
+  gasUrl.searchParams.set('signature', signature);
+
   for (let attempt = 1; attempt <= 3; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const response = await fetch(env.GAS_URL, {
+      const response = await fetch(gasUrl.toString(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
