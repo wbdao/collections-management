@@ -17,11 +17,16 @@ export async function search(env, ctx, query = {}) {
     ? query
     : (query.q ?? query.query ?? query.term ?? query.search ?? '');
   const limit = query && query.limit ? Number(query.limit) : undefined;
-  const items = (await repo.call('customer.search', 'customers', {
+  const result = (await repo.call('customer.search', 'customers', {
     query: term,
     limit
   })).data;
-  return { items: Array.isArray(items) ? items : [] };
+  // Apps Script's Router returns { items: [...] } for customer.search.
+  // Older adapters returned a bare array, so accept both shapes.
+  const items = Array.isArray(result)
+    ? result
+    : (result && Array.isArray(result.items) ? result.items : []);
+  return { items };
 }
 
 /** Backwards-compatible alias used by generic list consumers. */
