@@ -11,6 +11,11 @@ AppError.prototype = Object.create(Error.prototype);
 AppError.prototype.constructor = AppError;
 
 var Errors = {
+  /** Throws AppError when condition is falsy; otherwise returns the condition. */
+  assert: function (condition, code, message, details) {
+    if (!condition) Errors.fail(code || 'VALIDATION_ERROR', message || 'Assertion failed', details);
+    return condition;
+  },
   fail: function (code, message, details) { throw new AppError(code, message, details); },
   notFound: function (entity, id) {
     Errors.fail('NOT_FOUND', entity + ' not found: ' + id);

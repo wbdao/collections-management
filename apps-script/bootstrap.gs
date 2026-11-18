@@ -28,9 +28,14 @@ var Bootstrap = (function () {
 
   function seedSimple(entity, rows, keyField) {
     var created = 0;
+    var existing = {};
+    SheetsAdapter.readRows(entity).forEach(function (row) {
+      existing[String(row[keyField])] = true;
+    });
     rows.forEach(function (row) {
-      if (!SheetsAdapter.findRow(entity, keyField, row[keyField])) {
+      if (!existing[String(row[keyField])]) {
         SheetsAdapter.insertRow(entity, row);
+        existing[String(row[keyField])] = true;
         created++;
       }
     });
@@ -40,25 +45,37 @@ var Bootstrap = (function () {
   function seedRolesAndPermissions() {
     var created = 0;
 
+    // Read each seed table once instead of once per permission/grant. The old
+    // version re-read the whole role_permissions sheet hundreds of times, which
+    // dominated bootstrap runtime and frequently hit Apps Script limits.
+    var permissions = SheetsAdapter.readRows('permissions');
+    var grants = SheetsAdapter.readRows('role_permissions');
+    var permissionKeys = {};
+    permissions.forEach(function (row) { permissionKeys[String(row.code)] = true; });
+    var grantKeys = {};
+    grants.forEach(function (row) {
+      grantKeys[String(row.role_id) + '|' + String(row.permission_id)] = true;
+    });
+
     PERMISSION_CATALOG.forEach(function (p) {
       var code = p[0];
       var permissionId = 'PERM_' + code.replace(/[^A-Za-z0-9]/g, '_').toUpperCase();
-      if (!SheetsAdapter.findRow('permissions', 'code', code)) {
+      if (!permissionKeys[String(code)]) {
         SheetsAdapter.insertRow('permissions', {
           permission_id: permissionId, code: code, module: p[1], action: p[2]
         });
+        permissionKeys[String(code)] = true;
         created++;
       }
       SEED_ROLES.forEach(function (role) {
         var granted = (ROLE_PERMISSION_MAP[role.name] || []).indexOf(code) >= 0;
         if (!granted) return;
-        var exists = SheetsAdapter.readRows('role_permissions').some(function (rp) {
-          return rp.role_id === role.role_id && rp.permission_id === permissionId;
-        });
-        if (!exists) {
+        var key = String(role.role_id) + '|' + permissionId;
+        if (!grantKeys[key]) {
           SheetsAdapter.insertRow('role_permissions', {
             role_id: role.role_id, permission_id: permissionId
           });
+          grantKeys[key] = true;
           created++;
         }
       });

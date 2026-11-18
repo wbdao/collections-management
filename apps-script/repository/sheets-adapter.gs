@@ -126,7 +126,8 @@ var SheetsAdapter = (function () {
   function createSheet(entity) {
     var ss = getSpreadsheet();
     var name = sheetName(entity);
-    var sheet = ss.getSheetByName(name) || ss.insertSheet(name);
+    var existing = ss.getSheetByName(name);
+    var sheet = existing || ss.insertSheet(name);
     var columns = TABLES[entity].columns;
 
     // 1. Exact headers (replace only when they actually differ).
@@ -134,6 +135,11 @@ var SheetsAdapter = (function () {
     var header = headerRange.getValues()[0];
     var same = header.length === columns.length && columns.every(function (c, i) { return header[i] === c; });
     if (!same) headerRange.setValues([columns]);
+
+    // Existing, correctly-structured sheets need no further writes. Re-applying
+    // 5000-row validation ranges and auto-resize on every bootstrap run is what
+    // makes a 27-sheet bootstrap hang for minutes in Apps Script.
+    if (existing && same && sheet.getFrozenRows() === 1) return sheet;
 
     // 2. Bold header row.
     headerRange.setFontWeight('bold');

@@ -5,7 +5,9 @@ import { requirePermission } from '../rbac.js';
 import { applyScope } from '../scope.js';
 import { cached } from '../cache.js';
 
-const TTL = 30;
+// Cloudflare KV requires expirationTtl >= 60 seconds. A 30s TTL made every
+// cached write throw and turned dashboard responses into 500s.
+const TTL = 60;
 
 export async function summary(env, ctx, query = {}) {
   requirePermission(ctx, 'dashboard.read');

@@ -7,24 +7,21 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  var requestId = (e && e.parameter && e.parameter.requestId) || 'unknown';
+  // Query parameters always arrive via e.parameter; custom headers do not
+  // survive Google's Web App redirect proxy, so the query param is authoritative.
+  var provided = String((e && e.parameter && e.parameter.signature) || '');
+  var requestId = String((e && e.parameter && e.parameter.requestId) || 'unknown');
+  var raw = String(e && e.postData && e.postData.contents ? e.postData.contents : '');
   try {
-    var raw = String(e && e.postData && e.postData.contents ? e.postData.contents : '');
     if (!raw) Errors.fail('VALIDATION_ERROR', 'Empty request body');
-
-    var envelope = JSON.parse(raw);
-    requestId = envelope.requestId || requestId;
-    if (envelope.protocol !== CONFIG.protocol) Errors.fail('BAD_PROTOCOL', 'Unsupported protocol');
-
-    var provided = String(e.parameter.signature || '');
-    if (!provided) {
-      var header = e.postData.headers || {};
-      provided = String(header['X-Signature'] || header['x-signature'] || '');
-    }
     var expected = Utilities.base64EncodeWebSafe(
       Utilities.computeHmacSha256Signature(raw, CONFIG.sharedSecret)
     ).replace(/=+$/, '');
     if (provided !== expected) Errors.fail('UNAUTHORIZED', 'Invalid request signature');
+
+    var envelope = JSON.parse(raw);
+    if (envelope.protocol !== CONFIG.protocol) Errors.fail('BAD_PROTOCOL', 'Unsupported protocol');
+    requestId = envelope.requestId || requestId;
 
     var result = Router.handle(envelope);
     return ContentService.createTextOutput(JSON.stringify(
@@ -32,15 +29,6 @@ function doPost(e) {
     )).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     var error = Errors.from(err);
-    if (error.code !== 'UNAUTHORIZED') {
-      try {
-        SheetsAdapter.insertRow('integration_errors', {
-          error_id: Helpers.id('ERR'), request_id: requestId, action: '', envelope_json: '',
-          error_code: error.code, message: error.message, retry_count: 0,
-          created_at: Helpers.nowIso(), resolved_at: ''
-        });
-      } catch (ignored) { /* never mask the original error */ }
-    }
     return ContentService.createTextOutput(JSON.stringify(
       ResponseUtil.fail(requestId, error)
     )).setMimeType(ContentService.MimeType.JSON);
