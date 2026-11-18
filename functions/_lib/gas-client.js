@@ -64,7 +64,9 @@ export async function callGas(env, ctx, action, entity, payload = {}) {
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    // Bootstrap seeds all 27 sheets and takes ~13s in Apps Script; the old
+    // 10s cap aborted healthy upstream work. 60s leaves generous headroom.
+    const timer = setTimeout(() => controller.abort(), Number(env.GAS_TIMEOUT_MS) || 60000);
     try {
       const response = await fetch(gasUrl.toString(), {
         method: 'POST',
