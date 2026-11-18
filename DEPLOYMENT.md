@@ -362,3 +362,78 @@ Expected (counts vary on re-run):
 - Consider adding scope checks to mutation service actions (currently enforced
   mainly on list/get paths).
 - Generate `package-lock.json` via `npm install` and commit it for reproducible CI.
+
+---
+
+## 13. Production deployment & verification log (2026-11-18)
+
+### Live deployment
+
+| Item | Value |
+|---|---|
+| Cloudflare Pages project | `collections-management` |
+| API base | `https://collections-management.pages.dev/api/v1` |
+| Health | `https://collections-management.pages.dev/api/health` → 200 |
+| Apps Script Web App (production) | deployment `@17`, `AKfycbxythKpR19EZt2deIdK4r6aahN__hRy19-CezsY5ukmcmr1gRWe8cQne2jee3LDExc` |
+| Web App access | **Anyone** (`أي شخص`), execute as Me — set from the Apps Script UI |
+| Operational workbook | `12GyVXdmKlIZUy6evNhQK2IKJjZ8olWtEn6WxuPSunLI` |
+| Customer master workbook | `1U5mxsJIKZ_eVMlEgSZQBuBNJUEH7zX4Z`, sheet `قاعده عملاء الشركه` (5,914 rows, read live) |
+| Production KV | `fb65d7933b724884a1740133c824b026` |
+| CI | GitHub Actions auto-deploy on push to `main` (workflow `deploy.yml`) |
+
+> Do **not** run `clasp deploy` against `@17`: it can reset Web App access to
+> login-only. Create a new deployment from the Apps Script UI with access
+> `أي شخص` if a new Apps Script version must go live, then update the
+> `GAS_URL` GitHub Secret and rerun the deploy workflow.
+
+### Bootstrap / auth
+
+- Bootstrap on production succeeded:
+  `{"sheets":27,"protectedSheets":4,"roles":0,"permissionsAndGrants":0,"admin":0}`
+  (counts are 0 on re-run because the sheets/seeds already exist).
+- Login with `admin` succeeded; RS256 8h token verified on `GET /auth/me`.
+- `npm test`: **13 pass, 0 fail** (4 original suites + `gas-client.test.js`).
+
+### Production fixes applied after the first deployment
+
+| Commit | Issue | Fix |
+|---|---|---|
+| `4fbef14` | Dashboard returned 500. `cached()` wrote KV with `expirationTtl: 30`; Cloudflare requires ≥ 60s. | TTL raised to 60; all KV reads/writes wrapped so cache failures can never break a healthy response. |
+| `182cb7c` | `customers/autocomplete` and `/search` always returned empty: edge expected a bare array but Apps Script returns `{ items: [...] }`. | Accept both response shapes. |
+| `64e0132` | Arabic/Unicode search failed with `UNAUTHORIZED Invalid request signature`: Apps Script HMAC does not byte-match Workers' UTF-8 encoder for non-ASCII payloads. | Escape non-ASCII code units as `\uXXXX` before signing; `JSON.parse` restores original text. Regression test added. |
+| `633d169` | `limit` was dropped by the Apps Script router, so autocomplete ignored it. | Enforce the requested limit at the edge (capped at 100). |
+
+### Verified production results
+
+- `GET /dashboard/summary`, `/dashboard/custody`, `/dashboard/structure` → 200;
+  cache keys `cache:dashboard:summary` and `cache:dashboard:custody` are written.
+- Full GET smoke sweep across all modules passed (transient `HTTP=000` results
+  during rapid bursts succeeded on retry). `GET /admin/permissions` is 404 by
+  design — that route does not exist.
+- Customer master: `GET /customers/CUST020208` returns the mapped record
+  (`warehouse: "56"`, `department: "Wsagent-E"`, Arabic name/phone/national id);
+  `/warehouse` and `/department` return 200 with the same values.
+- Autocomplete/search:
+  - `?q=CUST0202&limit=3` → 3 items
+  - `?q=CUST020208&limit=3` → 1 exact item
+  - `?q=احمد&limit=3` and `?q=روان&limit=3` → 3 items each (Unicode fix)
+  - unknown account → `404 CUSTOMER_NOT_FOUND`
+- HMAC negative test directly against the production `/exec` endpoint:
+  missing, empty and wrong `?signature=` values all return
+  `UNAUTHORIZED Invalid request signature`; no data is disclosed.
+- Apps Script HEAD was restored to clean repository code with `clasp push
+  --force` after temporary diagnostics; production `@17` was never changed.
+
+### Open items
+
+- **Daily alert-scan trigger is not installed.** The Apps Script Triggers page
+  shows `0` triggers. Install once from the editor:
+  `installDailyScanTrigger()` (daily 01:00 UTC `dailyScanTrigger`). There is
+  intentionally **no** customer-master scan trigger — the master is read live
+  with a 5-minute CacheService TTL (`customer:{Account}`).
+- Mutation flows (create/transition/audit-log insertion) have not been run
+  against production to avoid writing test records into the live workbook.
+  Run them in a sandbox copy or with explicit approval, then inspect
+  `tbl_audit_logs` / `tbl_integration_errors`.
+- Temporary Apps Script deployments `@9`–`@15` can be archived/removed;
+  keep `@17` as the single public Web App deployment.
