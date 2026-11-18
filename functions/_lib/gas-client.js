@@ -19,6 +19,20 @@ async function sign(payload, secret) {
   return base64url(signature);
 }
 
+/**
+ * Apps Script's Utilities.computeHmacSha256Signature() does not produce the
+ * same bytes as the Workers TextEncoder when the payload contains non-ASCII
+ * text (e.g. Arabic customer names), so every such request fails signature
+ * verification. Escape all non-ASCII code units as \uXXXX: the signed bytes
+ * are then pure ASCII, and JSON.parse() on the Apps Script side restores the
+ * original Unicode values.
+ */
+export function asciiJson(value) {
+  return JSON.stringify(value).replace(/[\u007F-\uFFFF]/g, function (ch) {
+    return '\\u' + ('0000' + ch.charCodeAt(0).toString(16)).slice(-4);
+  });
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -50,7 +64,7 @@ export async function callGas(env, ctx, action, entity, payload = {}) {
     idempotencyKey: ctx.idempotencyKey || null
   };
 
-  const body = JSON.stringify(envelope);
+  const body = asciiJson(envelope);
   const signature = await sign(body, env.GAS_SHARED_SECRET);
   let lastError = null;
 
