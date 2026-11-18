@@ -26,7 +26,12 @@ export async function search(env, ctx, query = {}) {
   const items = Array.isArray(result)
     ? result
     : (result && Array.isArray(result.items) ? result.items : []);
-  return { items };
+  // The production Apps Script router drops `limit` and uses its own default.
+  // Enforce the requested limit here so autocomplete stays responsive.
+  const capped = Number.isFinite(limit) && limit >= 1
+    ? items.slice(0, Math.min(Math.floor(limit), 100))
+    : items;
+  return { items: capped };
 }
 
 /** Backwards-compatible alias used by generic list consumers. */
