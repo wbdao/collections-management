@@ -8,7 +8,10 @@ var MovementService = (function () {
 
   function create(ctx, input) {
     Errors.assert(DOCUMENT_TYPES.indexOf(input.documentType) >= 0, 'VALIDATION_ERROR', 'Invalid documentType');
+    var treasuryId = input.treasuryId || TreasuryService.resolveForLegacy(
+      input.toHolderId, input.warehouse || input.toLocation || '');
     var movement = SheetsAdapter.insertRow('movements', {
+      treasury_id: treasuryId,
       movement_id: Helpers.id('MOV'),
       document_type: input.documentType,
       document_id: input.documentId || '',

@@ -53,11 +53,14 @@ export async function callGas(env, ctx, action, entity, payload = {}) {
     throw Object.assign(new Error('Apps Script is not configured'), { code: 'CONFIG_ERROR', status: 500 });
   }
 
+  // PHASE 1 GAP FIX: the router derives the audit ip_address from actor.ip,
+  // so propagate the real client IP inside the signed actor object. Kept inside
+  // the HMAC envelope (not a header) so it cannot be forged downstream.
   const envelope = {
     protocol: PROTOCOL,
     requestId: ctx.requestId,
     timestamp: new Date().toISOString(),
-    actor: ctx.actor || null,
+    actor: ctx.actor ? { ...ctx.actor, ip: ctx.ip || ctx.actor.ip || '' } : null,
     action,
     entity: entity || null,
     payload,
@@ -132,8 +135,20 @@ export async function callGas(env, ctx, action, entity, payload = {}) {
   });
 }
 
-function mapCode(code) {
+export function mapCode(code) {
   switch (code) {
+    // PHASE 1 GAP FIX: these previously fell through to 500, so the frontend
+    // 401 handler never ran for bad credentials or account state changes.
+    case 'UNAUTHORIZED':
+    case 'INVALID_CREDENTIALS':
+    case 'ACCOUNT_DISABLED':
+    case 'ACCOUNT_LOCKED':
+    case 'MFA_REQUIRED':
+    case 'MFA_INVALID':
+    case 'MFA_CHALLENGE_EXPIRED':
+    case 'REFRESH_INVALID':
+    case 'REFRESH_REUSE':
+    case 'TOKEN_EXPIRED': return 401;
     case 'NOT_FOUND': return 404;
     case 'CUSTOMER_NOT_FOUND': return 404;
     case 'CUSTOMER_MASTER_NOT_CONFIGURED':
@@ -146,7 +161,12 @@ function mapCode(code) {
     case 'FORBIDDEN': return 403;
     case 'CONFLICT':
     case 'CONFLICT_VERSION':
-    case 'APPEND_ONLY': return 409;
+    case 'APPEND_ONLY':
+    case 'APPROVAL_REQUIRED':
+    case 'APPROVAL_DECIDED':
+    case 'APPROVAL_REJECTED':
+    case 'APPROVAL_EXPIRED':
+    case 'HASH_CHAIN_INVALID': return 409;
     case 'RATE_LIMITED': return 429;
     case 'UPSTREAM_TIMEOUT':
     case 'LOCK_TIMEOUT': return 503;

@@ -149,5 +149,11 @@ var Bootstrap = (function () {
     return { sheets: Object.keys(TABLES).length, protectedSheets: PROTECTED_SHEETS.length };
   }
 
-  return { run: run, rebuildStructure: rebuildStructure };
+  return {
+    run: run,
+    rebuildStructure: rebuildStructure,
+    // PHASE 2 (M011): additive permission seeding without adding another admin
+    // or bootstrap audit row. Safe to call repeatedly.
+    seedPermissions: seedRolesAndPermissions
+  };
 })();

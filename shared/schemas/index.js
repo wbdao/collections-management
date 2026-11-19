@@ -7,7 +7,45 @@ function rule(type, options = {}) {
 export const SCHEMAS = {
   login: {
     username: rule('string', { required: true, minLength: 1 }),
-    password: rule('string', { required: true, minLength: 1 })
+    password: rule('string', { required: true, minLength: 1 }),
+    deviceInfo: rule('string')
+  },
+  refresh: {
+    refreshToken: rule('string', { required: true, minLength: 1 })
+  },
+  // PHASE 2 / Step 3 — MFA
+  mfaEnroll: {
+    type: rule('string', { required: true, enum: ['TOTP', 'EMAIL_OTP'] })
+  },
+  mfaVerify: {
+    code: rule('string', { required: true, minLength: 6 }),
+    type: rule('string', { enum: ['TOTP', 'EMAIL_OTP', 'RECOVERY'] }),
+    mfaToken: rule('string')
+  },
+  mfaDisable: {
+    code: rule('string', { required: true, minLength: 6 }),
+    type: rule('string', { enum: ['TOTP', 'EMAIL_OTP', 'RECOVERY'] })
+  },
+  mfaResend: {},
+
+  // PHASE 2 / Step 7 — approval decisions
+  approvalDecision: {
+    notes: rule('string'),
+    reason: rule('string')
+  },
+
+  // PHASE 2 / Step 4 — treasuries
+  treasury: {
+    treasury_id: rule('string', { required: true, pattern: /^[A-Za-z0-9_-]{2,40}$/ }),
+    treasury_name: rule('string', { required: true }),
+    treasury_type: rule('string', { required: true, enum: ['BRANCH', 'HQ'] }),
+    warehouse: rule('string'),
+    status: rule('string', { enum: ['ACTIVE', 'INACTIVE'] })
+  },
+  treasuryPatch: {
+    treasury_name: rule('string'),
+    warehouse: rule('string'),
+    status: rule('string', { enum: ['ACTIVE', 'INACTIVE'] })
   },
   batch: {
     batch_number: rule('string', { required: true, pattern: /^BAT-[A-Za-z0-9-]+$/ }),

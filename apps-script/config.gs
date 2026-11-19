@@ -27,6 +27,11 @@ var CONFIG = (function () {
   return {
     /* ---- Operational database (this app owns it) ------------------------ */
     get spreadsheetId() { return get('SPREADSHEET_ID', DEFAULT_SPREADSHEET_ID); },
+    // PHASE 2 (M010): workbook split. Missing DOCS/AUDIT properties fall back
+    // to CORE, so a fresh deployment behaves exactly like Phase 1.
+    get coreSpreadsheetId() { return get('CORE_SPREADSHEET_ID', get('SPREADSHEET_ID', DEFAULT_SPREADSHEET_ID)); },
+    get docsSpreadsheetId() { return get('DOCS_SPREADSHEET_ID', ''); },
+    get auditSpreadsheetId() { return get('AUDIT_SPREADSHEET_ID', ''); },
     get sharedSecret() { return require('GAS_SHARED_SECRET'); },
     get adminPassword() { return get('BOOTSTRAP_ADMIN_PASSWORD', 'Admin@12345'); },
     cacheTtlSeconds: 60,

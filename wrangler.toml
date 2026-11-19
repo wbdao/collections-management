@@ -6,16 +6,21 @@ pages_build_output_dir = "frontend"
 # Required Cloudflare Pages secrets (set with `wrangler pages secret put`):
 #   GAS_URL, GAS_SHARED_SECRET, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY,
 #   JWT_ISSUER, JWT_AUDIENCE, BOOTSTRAP_TOKEN
+# Google Sheets is the only storage backend. R2 is skipped: no buckets,
+# bindings, backup secrets or backup trigger are part of this rollout.
 # See DEPLOYMENT.md for the full checklist.
 
 [vars]
 ENVIRONMENT = "production"
 API_BASE = "/api/v1"
+REPOSITORY_ADAPTER = "sheets"   # never set to "d1" in Phase 2
+CACHE_TTL_SECONDS = "60"        # KV floor 60s
 
-# Replace both IDs with real KV namespace IDs before deploying.
-# Create them with: wrangler kv namespace create CMS_KV
-#                  wrangler kv namespace create CMS_KV --preview
+# Reuse the existing production KV namespace (namespaced key prefixes are used
+# for rl:*, cache:*, revoke:*, otp:*, idem:*).
 [[kv_namespaces]]
 binding = "KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
-preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
+id = "fb65d7933b724884a1740133c824b026"
+preview_id = "50ad43c2c8a740a0a2429cdd66b93dd6"
+
+# No R2 bindings. Google Sheets is the primary and only production store.

@@ -4,7 +4,15 @@ var Router = (function () {
 
   var READ_ACTIONS = [
     'ping', 'list', 'get', 'aggregate', 'auth.me', 'tracking.track', 'tracking.trackTyped',
-    'customer.get', 'customer.search', 'customer.warehouse', 'customer.department'
+    'customer.get', 'customer.search', 'customer.warehouse', 'customer.department',
+    // PHASE 2 read-only actions
+    'audit.chainStatus', 'security.events', 'security.me', 'migration.status',
+    'mfa.policy', 'mfa.secret.get',
+    'treasury.list', 'notification.list', 'notification.summary',
+    'attachment.list', 'attachment.get', 'approval.list', 'approval.get',
+    'session.list', 'session.lookup', 'report.aging', 'report.collectorPerformance',
+    'report.treasuryReconciliation', 'report.auditExceptions', 'report.kpis',
+    'backup.list', 'registry.status'
   ];
 
   var FIELD_MAP = {
@@ -160,6 +168,12 @@ var Router = (function () {
       case 'warehouseReport': return ReportService.byWarehouse(params);
       case 'departmentReport': return ReportService.byDepartment(params);
       case 'warehouseStructure': return DashboardService.structure();
+      // PHASE 2 / Step 8 — advanced reporting (also reachable as service actions).
+      case 'report.aging': return ReportService.aging(params);
+      case 'report.collectorPerformance': return ReportService.collectorPerformance(params);
+      case 'report.treasuryReconciliation': return ReportService.treasuryReconciliation(params);
+      case 'report.auditExceptions': return ReportService.auditExceptions(params);
+      case 'report.kpis': return ReportService.kpis(params);
       default: Errors.fail('UNKNOWN_AGGREGATE', 'Unknown aggregate: ' + name);
     }
   }
@@ -211,6 +225,140 @@ var Router = (function () {
       case 'movement.create': return MovementService.create(ctx, payload);
       case 'tracking.track': return TrackingService.track(payload.number);
       case 'tracking.trackTyped': return TrackingService.trackTyped(payload.type, payload.number);
+
+      /* ---- PHASE 2 / Step 7 — approvals ---------------------------------- */
+      case 'approval.list': return { items: ApprovalService.list(payload) };
+      case 'approval.get': return ApprovalService.get(payload.approvalId || payload.id);
+      case 'approval.approve': return ApprovalService.decide(
+        ctx, payload.approvalId || payload.id, 'APPROVED', payload.notes);
+      case 'approval.reject': return ApprovalService.decide(
+        ctx, payload.approvalId || payload.id, 'REJECTED', payload.reason || payload.notes);
+
+      /* ---- PHASE 2 / Step 6 — attachments -------------------------------- */
+      case 'attachment.list': return { items: AttachmentService.list(payload) };
+      case 'attachment.get': return AttachmentService.get(payload.attachmentId || payload.id);
+      case 'attachment.create': return AttachmentService.create(ctx, payload);
+      case 'attachment.delete': return AttachmentService.softDelete(ctx, payload.attachmentId || payload.id);
+
+      /* ---- PHASE 2 / Step 5 — notifications ------------------------------ */
+      case 'notification.list': return {
+        items: NotificationService.list(ctx.actor.userId, payload)
+      };
+      case 'notification.summary': return NotificationService.summary(ctx.actor.userId);
+      case 'notification.markRead': return NotificationService.markRead(ctx.actor.userId, payload.notificationId);
+      case 'notification.markAllRead': return NotificationService.markAllRead(ctx.actor.userId);
+      case 'notification.raise': return NotificationService.raise(ctx, payload);
+
+      /* ---- PHASE 2 / Step 4 — treasuries --------------------------------- */
+      case 'treasury.list': return { items: TreasuryService.list(payload) };
+      case 'treasury.get': return TreasuryService.get(payload.treasuryId || payload.id);
+      case 'treasury.create': return TreasuryService.create(ctx, payload);
+      case 'treasury.update': return TreasuryService.update(ctx, payload.treasuryId, payload.patch || {});
+
+      /* ---- PHASE 2 / Step 3 — MFA ---------------------------------------- */
+      case 'mfa.policy': return AuthService.mfaPolicy();
+      case 'mfa.secret.get': return AuthService.getMfaSecret(payload.userId);
+      case 'mfa.secret.set': return AuthService.setMfaSecret(payload.userId, payload.secret);
+      case 'mfa.enable': return AuthService.setMfaEnabled(payload.userId, true);
+      case 'mfa.disable': return AuthService.setMfaEnabled(payload.userId, false);
+      case 'mfa.deliverOtp': return AuthService.deliverOtp({
+        userId: payload.userId, email: payload.email, code: payload.code, ip: ctx.ip
+      });
+      case 'mfa.recovery.set': return AuthService.setRecoveryCodes(payload.userId, payload.hashes);
+      case 'mfa.recovery.verify': return AuthService.verifyRecoveryCode(payload.userId, payload.hash);
+      case 'security.event':
+        return { written: SecurityEventService.write({
+          eventType: payload.eventType, userId: payload.userId, ip: payload.ip || ctx.ip,
+          requestId: payload.requestId || ctx.requestId, details: payload.details,
+          severity: payload.severity
+        }) != null };
+
+      /* ---- PHASE 2 / Step 2 — sessions ----------------------------------- */
+      case 'session.lookup': return SessionService.lookup(payload.refreshTokenHash);
+      case 'session.create': return {
+        session: SessionService.create(ctx, {
+          sessionId: payload.sessionId, userId: payload.userId,
+          refreshTokenHash: payload.refreshTokenHash, deviceInfo: payload.deviceInfo,
+          ip: payload.ip || ctx.ip, expiresAt: payload.expiresAt
+        })
+      };
+      case 'session.refresh': {
+        var rotated = SessionService.rotate(ctx, {
+          refreshTokenHash: payload.refreshTokenHash, userId: payload.userId,
+          newSessionId: payload.newSessionId, newRefreshTokenHash: payload.newRefreshTokenHash,
+          deviceInfo: payload.deviceInfo, ip: payload.ip || ctx.ip, expiresAt: payload.expiresAt
+        });
+        if (rotated.error) Errors.fail(rotated.error, 'Refresh token rejected: ' + rotated.error);
+        var identity = AuthService.currentUser(payload.userId);
+        return {
+          session: rotated.session, previousSessionId: rotated.previousSessionId,
+          user: identity.user, permissions: identity.permissions
+        };
+      }
+      case 'session.revoke': return {
+        revoked: SessionService.revoke(payload.sessionId, { reason: payload.reason || 'LOGOUT', ip: ctx.ip }),
+        count: payload.sessionId ? 1 : 0
+      };
+      case 'session.revokeAll': return SessionService.revokeAll(payload.userId, payload.reason || 'LOGOUT_ALL');
+      case 'session.list': return { items: SessionService.list(ctx.actor.userId) };
+
+      /* ---- PHASE 2 / Step 8 — advanced reporting ------------------------ */
+      case 'report.aging': return ReportService.aging(payload);
+      case 'report.collectorPerformance': return ReportService.collectorPerformance(payload);
+      case 'report.treasuryReconciliation': return ReportService.treasuryReconciliation(payload);
+      case 'report.auditExceptions': return ReportService.auditExceptions(payload);
+      case 'report.kpis': return ReportService.kpis(payload);
+
+      /* ---- PHASE 2 service actions -------------------------------------- */
+      case 'audit.verify': return AuditService.verifyChain();
+      case 'audit.chainStatus': return AuditService.chainStatus();
+      case 'security.events': return { items: SecurityEventService.list(payload) };
+
+      /* ---- PHASE 2 / Step 11 — security self-service & lockout ------------ */
+      case 'security.me': {
+        var meId = payload.userId || (ctx.actor && ctx.actor.userId);
+        var meUser = SheetsAdapter.findRow('users', 'user_id', meId);
+        var meLock = AuthService.lockStatus(meUser);
+        return {
+          userId: meId,
+          role: meUser ? meUser.role_id : '',
+          mfaEnabled: !!meUser && (meUser.mfa_enabled === true || meUser.mfa_enabled === 'TRUE'),
+          lock: meLock,
+          sessions: SessionService.list(meId),
+          recentEvents: SecurityEventService.list({ userId: meId, limit: 20 })
+        };
+      }
+      case 'security.unlock':
+        if (!ctx.actor || ctx.actor.role !== 'ADMIN') Errors.forbidden('Account unlock requires ADMIN actor');
+        return AuthService.unlockUser(payload.userId, ctx);
+
+      case 'migration.run':
+        if (!ctx.actor || ctx.actor.role !== 'ADMIN') Errors.forbidden('Migrations require ADMIN actor');
+        return MigrationRunner.run(ctx, payload);
+      case 'migration.verify':
+        if (!ctx.actor || ctx.actor.role !== 'ADMIN') Errors.forbidden('Migrations require ADMIN actor');
+        return MigrationRunner.verify(ctx, payload);
+      case 'migration.status': return MigrationRunner.status();
+
+      /* ---- PHASE 2 / Step 12 — backup lifecycle -------------------------- */
+      case 'backup.start':
+        if (!ctx.actor || ctx.actor.role !== 'ADMIN') Errors.forbidden('Backup start requires ADMIN actor');
+        return BackupService.start(ctx);
+      case 'backup.complete':
+        if (!ctx.actor || ctx.actor.role !== 'ADMIN') Errors.forbidden('Backup completion requires ADMIN actor');
+        return BackupService.complete(ctx, payload);
+      case 'backup.fail':
+        if (!ctx.actor || ctx.actor.role !== 'ADMIN') Errors.forbidden('Backup failure logging requires ADMIN actor');
+        return BackupService.fail(ctx, payload);
+      case 'backup.list': return BackupService.list(payload);
+
+      /* ---- PHASE 2 / Step 9 — workbook split administration -------------- */
+      case 'registry.status':
+        if (!ctx.actor || ctx.actor.role !== 'ADMIN') Errors.forbidden('Registry status requires ADMIN actor');
+        return WorkbookRegistryService.status();
+      case 'registry.setSplit':
+        if (!ctx.actor || ctx.actor.role !== 'ADMIN') Errors.forbidden('Workbook split requires ADMIN actor');
+        return WorkbookRegistryService.setSplit(ctx, payload.enabled === true);
       default: Errors.fail('UNKNOWN_ACTION', 'Unknown action: ' + action);
     }
   }

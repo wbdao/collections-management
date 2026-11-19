@@ -71,6 +71,19 @@ export function assertScope(ctx, target = {}) {
   return true;
 }
 
+/**
+ * PHASE 2: stricter guard for sensitive new endpoints (sessions, approvals,
+ * backups, security events). Unlike assertScope(), an empty scope list is NOT
+ * treated as unrestricted for non-admin/auditor roles.
+ */
+export function assertExplicitScope(ctx) {
+  const role = ctx.actor?.role;
+  if (role === ROLES.ADMIN || role === ROLES.AUDITOR) return true;
+  const summary = scopeSummary(ctx);
+  if (!summary.warehouseIds.length && !summary.branchIds.length) denied();
+  return true;
+}
+
 function denied() {
   throw Object.assign(new Error('Resource outside caller scope'), { code: 'FORBIDDEN', status: 403 });
 }

@@ -41,7 +41,10 @@ var GuaranteeService = (function () {
     CustomerMasterService.getCustomer(account);
 
     var guarantee = applyCustomer(data);
+    var treasuryId = data.treasury_id || TreasuryService.resolveOrDefault('BRANCH_TREASURY', guarantee.warehouse);
+    TreasuryService.get(treasuryId);
     var row = SheetsAdapter.insertRow('guarantees', {
+      treasury_id: treasuryId,
       guarantee_id: Helpers.id('GRT'),
       guarantee_number: guarantee.guarantee_number,
       customer_code: guarantee.customer_code,
@@ -83,11 +86,21 @@ var GuaranteeService = (function () {
   }
 
   function transition(ctx, id, toStatus, payload) {
+    // PHASE 2 / Step 7: releasing a guarantee is gated.
+    if (toStatus === 'RELEASED' && typeof ApprovalService !== 'undefined') {
+      ApprovalService.gate(ctx, 'GUARANTEE_RELEASE', id, 'RELEASE', {
+        description: 'Release guarantee ' + id
+      });
+    }
     var result = StateMachine.transition(ctx, 'guarantees', id, toStatus, payload);
     var guarantee = SheetsAdapter.findRow('guarantees', 'guarantee_id', id);
     var holder = { AT_HQ: 'HQ_TREASURY', LEGAL_DEPARTMENT: 'LEGAL', RELEASED: 'WAREHOUSE', CLOSED: 'WAREHOUSE' }[toStatus];
     if (holder) {
-      SheetsAdapter.updateRow('guarantees', id, { current_holder: holder, current_location: holder }, guarantee.version);
+      SheetsAdapter.updateRow('guarantees', id, {
+        current_holder: holder,
+        current_location: holder,
+        treasury_id: TreasuryService.resolveForLegacy(holder, guarantee.warehouse) || guarantee.treasury_id || ''
+      }, guarantee.version);
       TrackingService.upsertFromEntity('guarantees', SheetsAdapter.findRow('guarantees', 'guarantee_id', id));
     }
     return result;

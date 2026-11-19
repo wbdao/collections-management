@@ -23,3 +23,26 @@ function dailyScanTrigger() {
     return AlertService.dailyScan(ctx);
   });
 }
+
+/* ---- R2 backup trigger — DISABLED (Google Sheets only) -------------------- */
+/*
+ * R2 is intentionally skipped in this rollout. These functions are inert
+ * placeholders so no scheduled job can dispatch a backup to a nonexistent
+ * bucket or to the unmounted /api/v1/admin/backups route. Install only
+ * dailyScanTrigger (01:00 UTC).
+ */
+function installDailyBackupTrigger() {
+  return {
+    installed: false,
+    disabled: true,
+    reason: 'R2 is disabled; Google Sheets is the only storage backend.'
+  };
+}
+
+function dailyBackupTrigger() {
+  return {
+    ok: true,
+    disabled: true,
+    reason: 'R2 is disabled; Google Sheets is the only storage backend.'
+  };
+}

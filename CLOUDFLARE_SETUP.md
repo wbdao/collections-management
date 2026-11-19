@@ -59,6 +59,14 @@ preview_id = "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
 
 ---
 
+## الخطوة 2ب — R2 (مُلغى)
+
+تم إلغاء استخدام R2 في هذا النشر. Google Sheets هو المخزن الوحيد. لا تُنشأ أي حاويات R2، ولا توجد روابط `ATTACHMENTS_BUCKET` / `BACKUPS_BUCKET` في `wrangler.toml`. مسارات المرفقات والنسخ الاحتياطية غير مفعّلة، ومشغّل `dailyBackupTrigger` معطّل.
+
+> استخدم سجل الإصدارات في Google Workspace + سلسلة التدقيق (`tbl_audit_logs` و `tbl_settings.audit_chain_tip`) للتحقق من السلامة.
+
+---
+
 ## الخطوة 3 — إنشاء API Token
 
 1. افتح https://dash.cloudflare.com/profile/api-tokens
@@ -99,6 +107,8 @@ $bytes2 = [byte[]](1..48 | ForEach-Object { Get-Random -Max 256 }); [Convert]::T
 
 - الأول → `GAS_SHARED_SECRET` (ويجب أن يُوضع أيضاً كـ Script Property في Apps Script بنفس القيمة).
 - الثاني → `BOOTSTRAP_TOKEN`.
+
+لا توجد أسرار إضافية للمرحلة 2: `BACKUP_SERVICE_TOKEN` و `BACKUP_SIGNING_KEY` غير مستخدمين لأن R2 ملغى.
 
 > لا تحذف ملفي `jwt_private.pem` / `jwt_public.pem` — لا ترفعهما إلى GitHub (أضفهما إلى `.gitignore` إن أردت).
 
@@ -205,6 +215,18 @@ curl -X POST "https://collections-management.pages.dev/api/v1/admin/bootstrap" `
 | `SPREADSHEET_ID` | `12GyVXdmKlIZUy6evNhQK2IKJjZ8olWtEn6WxuPSunLI` (اختياري) |
 | `BOOTSTRAP_ADMIN_PASSWORD` | كلمة مرور قوية (بدلاً من `Admin@12345`) |
 
+خصائص النسخ الاحتياطي (`BACKUP_EDGE_URL`، `BACKUP_SERVICE_TOKEN`) غير مطلوبة لأن R2 ملغى.
+
+بعد النشر، ثبّت مشغّل Apps Script مرة واحدة فقط: `installDailyScanTrigger()` (01:00 UTC). مشغّل `dailyBackupTrigger()` معطّل ولا يُثبّت.
+
+---
+
+## الخطوة 9ب — تثبيت ترحيلات المرحلة 2 (بعد موافقة منفصلة)
+
+بعد نشر الكود وتأكيد `POST /api/v1/admin/bootstrap`، طبّق M001–M011 بالترتيب من مشروع Apps Script عبر إجراءات المُوجّه الموقّعة `migration.run` ثم تحقّق بـ `migration.verify` و `migration.status` (لا يوجد مسار REST عام لهذه الإجراءات). كل ترحيلات المرحلة 2 **مضافة فقط** (أعمدة جديدة في نهاية الجداول + جداول جديدة) ولا تحذف بيانات. احتفظ بنسخة من ملف العمل قبل الترحيل.
+
+> ملاحظة: لا شيء من المرحلة 2 منشور حالياً. نشر `clasp push --force` أو نشر Pages يتم فقط بعد موافقة صريحة.
+
 ---
 
 ## الخطوة 10 — الاختبار
@@ -234,6 +256,8 @@ curl "https://collections-management.pages.dev/api/v1/customers/autocomplete?q=1
 | `Could not verify JWT` | المفتاح العام خاطئ أو `\n` غير حرفية | أعد ضبط `JWT_PUBLIC_KEY` |
 | `Missing GitHub Variable KV_NAMESPACE_ID` | Variables غير مضبوطة | الخطوة 5 |
 | فشل `npm test` في Actions | غياب `package-lock.json` | شغّل `npm install` وارفع القفل |
+| `404 NOT_FOUND` عند `/attachments` أو `/admin/backups` | متوقع — R2 ملغى والمسارات غير مركّبة | لا إجراء مطلوب؛ Google Sheets هو المخزن الوحيد |
+| `HASH_CHAIN_INVALID` | تعديل أو حذف في `tbl_audit_logs` | لا تعدّل السجل؛ راجع `tbl_security_events` و `tbl_settings.audit_chain_tip` |
 
 ---
 

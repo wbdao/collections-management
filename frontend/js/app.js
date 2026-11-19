@@ -9,6 +9,8 @@ import dashboard from './pages/dashboard.js';
 import custody from './pages/custody.js';
 import tracking from './pages/tracking.js';
 import customers from './pages/customers.js';
+import approvals from './pages/approvals.js';
+import reports from './pages/reports.js';
 import { notFoundPage, forbiddenPage } from './pages/notfound.js';
 
 const app = document.getElementById('app');
@@ -36,6 +38,7 @@ defineRoutes([
   { path: '/custody', page: custody },
   { path: '/tracking', page: tracking },
   { path: '/customers', page: customers },
+  { path: '/approvals', page: approvals },
   { path: '/batches', page: stubPage('Book Batches', 'Printing house batch lifecycle', 'batches.read') },
   { path: '/books', page: stubPage('Books', 'Serial ranges and receipt generation', 'books.read') },
   { path: '/receipts', page: stubPage('Receipts', 'Collection receipt lifecycle', 'receipts.read') },
@@ -45,6 +48,8 @@ defineRoutes([
   { path: '/cheques', page: stubPage('Cheques', 'Cheque lifecycle and clearing', 'cheques.read') },
   { path: '/guarantees', page: stubPage('Guarantees', 'Guarantee lifecycle and expiry', 'guarantees.read') },
   { path: '/alerts', page: stubPage('Alerts', 'Daily idempotent alert scan', 'alerts.read') },
+  { path: '/reports', page: reports },
+  { path: '/reports/advanced', page: reports },
   { path: '/reports/outstanding', page: stubPage('Outstanding Report', 'Collector balances and aging', 'reports.read') },
   { path: '/audit', page: stubPage('Audit Log', 'Append-only audit trail', 'audit.read') }
 ]);

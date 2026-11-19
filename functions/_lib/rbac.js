@@ -8,8 +8,12 @@ export function permissionsFor(role) {
 
 export function hasPermission(ctx, permission) {
   if (!ctx || !ctx.actor) return false;
-  const claims = ctx.actor.permissions || permissionsFor(ctx.actor.role);
-  return claims.includes(permission);
+  // PHASE 1 GAP FIX: honour '*' as a wildcard (the bootstrap actor relies on
+  // it). All other semantics are preserved exactly so no role gains access.
+  const claims = (ctx.actor.permissions === undefined || ctx.actor.permissions === null)
+    ? permissionsFor(ctx.actor.role)
+    : ctx.actor.permissions;
+  return claims.includes('*') || claims.includes(permission);
 }
 
 export function requirePermission(ctx, permission) {

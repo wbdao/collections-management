@@ -4,6 +4,9 @@ export const API_BASE = '/api/v1';
 
 export const STORAGE_KEYS = Object.freeze({
   TOKEN: 'cms.accessToken',
+  // PHASE 2 / Step 2 — 15-minute access tokens + 7-day rotating refresh tokens.
+  REFRESH_TOKEN: 'cms.refreshToken',
+  SESSION: 'cms.sessionId',
   USER: 'cms.user',
   PERMISSIONS: 'cms.permissions'
 });

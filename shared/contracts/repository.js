@@ -73,5 +73,14 @@ export const ENTITY = Object.freeze({
   GUARANTEES: 'guarantees',
   MOVEMENTS: 'movements',
   ALERTS: 'alerts',
-  AUDIT_LOGS: 'audit_logs'
+  AUDIT_LOGS: 'audit_logs',
+  // PHASE 2 — additive entity keys only. The 8-method contract above is
+  // deliberately unchanged; no new repository method is introduced.
+  SESSIONS: 'sessions',
+  TREASURIES: 'treasuries',
+  ATTACHMENTS: 'attachments',
+  NOTIFICATIONS: 'notifications',
+  APPROVALS: 'approvals',
+  SECURITY_EVENTS: 'security_events',
+  BACKUPS: 'backups'
 });

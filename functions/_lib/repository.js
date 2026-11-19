@@ -4,6 +4,7 @@
  */
 import { callGas } from './gas-client.js';
 import { assertRepository } from '../../shared/contracts/repository.js';
+import { D1RepositoryAdapter } from './d1-repository-adapter.js';
 
 export class Transaction {
   constructor(repository) {
@@ -93,5 +94,10 @@ export class Repository {
 assertRepository(Repository.prototype);
 
 export function createRepository(env, ctx) {
+  // PHASE 2 / Step 10 — D1 is a reference adapter only. It is selected solely
+  // by an explicit, non-production flag; Sheets/GAS remains the default.
+  if (env && env.REPOSITORY_ADAPTER === 'd1') {
+    return assertRepository(new D1RepositoryAdapter(env.DB, { ...ctx, env }));
+  }
   return new Repository(env, ctx);
 }

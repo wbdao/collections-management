@@ -35,7 +35,10 @@ var ChequeService = (function () {
     CustomerMasterService.getCustomer(account);
 
     var cheque = applyCustomer(data);
+    var treasuryId = data.treasury_id || TreasuryService.resolveOrDefault('BRANCH_TREASURY', cheque.warehouse);
+    TreasuryService.get(treasuryId);
     var row = SheetsAdapter.insertRow('cheques', {
+      treasury_id: treasuryId,
       cheque_id: Helpers.id('CHQ'),
       cheque_number: cheque.cheque_number,
       customer_code: cheque.customer_code,
@@ -83,6 +86,12 @@ var ChequeService = (function () {
   }
 
   function transition(ctx, id, toStatus, payload) {
+    // PHASE 2 / Step 7: clearing and clearing completion are gated.
+    if (['CLEARING', 'CLEARED'].indexOf(toStatus) >= 0 && typeof ApprovalService !== 'undefined') {
+      ApprovalService.gate(ctx, 'CHEQUE_STATUS_CHANGE', id, 'TRANSITION_' + toStatus, {
+        description: 'Change cheque status to ' + toStatus
+      });
+    }
     var result = StateMachine.transition(ctx, 'cheques', id, toStatus, payload);
     var cheque = SheetsAdapter.findRow('cheques', 'cheque_id', id);
     var holder = {
@@ -92,7 +101,8 @@ var ChequeService = (function () {
     if (holder) {
       SheetsAdapter.updateRow('cheques', id, {
         current_holder: holder,
-        current_location: holder
+        current_location: holder,
+        treasury_id: TreasuryService.resolveForLegacy(holder, cheque.warehouse) || cheque.treasury_id || ''
       }, cheque.version);
       TrackingService.upsertFromEntity('cheques',
         SheetsAdapter.findRow('cheques', 'cheque_id', id));

@@ -20,11 +20,13 @@ const NAV = [
     { path: '/deposits/branch', label: 'Branch Deposits', icon: '⇥', permission: 'deposits.branch.read' },
     { path: '/deposits/hq', label: 'HQ Deposits', icon: '⇤', permission: 'deposits.hq.read' },
     { path: '/cheques', label: 'Cheques', icon: '▭', permission: 'cheques.read' },
-    { path: '/guarantees', label: 'Guarantees', icon: '❖', permission: 'guarantees.read' }
+    { path: '/guarantees', label: 'Guarantees', icon: '❖', permission: 'guarantees.read' },
+    { path: '/approvals', label: 'Approvals', icon: '✓', permission: 'approvals.read' }
   ] },
   { group: 'Insights', items: [
     { path: '/alerts', label: 'Alerts', icon: '⚑', permission: 'alerts.read' },
-    { path: '/reports/outstanding', label: 'Outstanding Report', icon: '▤', permission: 'reports.read' },
+    { path: '/reports', label: 'Advanced Reports', icon: '▤', permission: 'reports.read' },
+    { path: '/reports/outstanding', label: 'Outstanding Report', icon: '▥', permission: 'reports.read' },
     { path: '/audit', label: 'Audit Log', icon: '≡', permission: 'audit.read' }
   ] }
 ];
@@ -59,7 +61,7 @@ export function renderShell({ title, subtitle = '', content = '', activePath = '
           <div class="brand-text"><strong>Collections</strong><span>Management System</span></div>
         </div>
         ${renderNav(activePath)}
-        <div class="sidebar-footer">Phase 1 · Secure session<br>8-hour token</div>
+        <div class="sidebar-footer">Phase 2 · Secure session<br>15-minute token · auto-refresh</div>
       </aside>
       <header class="topbar">
         <div class="topbar-title">
@@ -72,6 +74,7 @@ export function renderShell({ title, subtitle = '', content = '', activePath = '
             <span>${escapeHtml(user?.username || 'user')} · ${escapeHtml(user?.role || '')}</span>
           </div>
           <button class="btn btn-sm btn-ghost" id="logout-btn" type="button">Sign out</button>
+          <button class="btn btn-sm btn-ghost" id="logout-all-btn" type="button" title="Sign out on every device">Sign out all</button>
         </div>
       </header>
       <main class="content" id="main-content">${content}</main>
@@ -79,11 +82,15 @@ export function renderShell({ title, subtitle = '', content = '', activePath = '
 }
 
 export function bindShell(root) {
-  on(root, 'click', '#logout-btn', async () => {
-    try { await api.post('/auth/logout', {}); } catch (e) { /* local logout still applies */ }
-    endSession();
-    navigate('/login', { replace: true });
-  });
+  function logout(all) {
+    return async () => {
+      try { await api.post('/auth/logout', { all }); } catch (e) { /* local logout still applies */ }
+      endSession();
+      navigate('/login', { replace: true });
+    };
+  }
+  on(root, 'click', '#logout-btn', logout(false));
+  on(root, 'click', '#logout-all-btn', logout(true));
 }
 
 export function contentHead(title, subtitle = '', actions = '') {

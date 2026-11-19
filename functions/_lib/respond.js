@@ -3,7 +3,7 @@
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, If-Match, X-Request-Id, X-Bootstrap-Token',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, If-Match, X-Request-Id, X-Bootstrap-Token, X-Backup-Token',
   'Access-Control-Max-Age': '86400',
   Vary: 'Origin'
 };

@@ -14,6 +14,9 @@ JWT_AUDIENCE=cms-web
 # One-time bootstrap secret for POST /api/v1/admin/bootstrap
 BOOTSTRAP_TOKEN=replace-with-another-long-random-secret
 
+# R2 is skipped. BACKUP_SERVICE_TOKEN / BACKUP_SIGNING_KEY and
+# BACKUP_EDGE_URL are not used in this rollout; do not set them.
+
 # NOTE: Google Sheet IDs are Apps Script SCRIPT PROPERTIES, not Cloudflare vars.
 # Set these in the Apps Script project (Project Settings > Script Properties):
 #   GAS_SHARED_SECRET                 = same value as above
@@ -21,3 +24,6 @@ BOOTSTRAP_TOKEN=replace-with-another-long-random-secret
 #   CUSTOMER_MASTER_SHEET_NAME        = قاعده عملاء الشركه  (optional, this is the default)
 #   SPREADSHEET_ID                    = operational workbook ID (optional, has a default)
 #   BOOTSTRAP_ADMIN_PASSWORD          = strong admin password (MUST be changed in production)
+#
+# Install only the Phase 1 daily alert trigger once from Apps Script:
+#   installDailyScanTrigger()   -> 01:00 UTC

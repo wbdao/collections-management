@@ -1,12 +1,12 @@
-# Collections Management System — Phase 1
+# Collections Management System — Phase 1 + Phase 2
 
-Production implementation of the approved Phase 1 architecture.
+Production Phase 1 system (live) plus the locally implemented, pending-deployment Phase 2 hardening/extension.
 
 ```text
 Frontend → Cloudflare Functions → Repository Interface → Apps Script Adapter → Google Sheets
 ```
 
-Business services never access `SpreadsheetApp`. Only `apps-script/repository/sheets-adapter.gs` holds Google Sheets access code.
+This architecture is unchanged. Business services never access `SpreadsheetApp`; only `apps-script/repository/sheets-adapter.gs` holds Google Sheets access code. Google Sheets remains the single source of truth. The D1 adapter is a reference/contract-test implementation only — it is never bound or selected in production.
 
 ## Layout
 
@@ -14,54 +14,85 @@ Business services never access `SpreadsheetApp`. Only `apps-script/repository/sh
 |---|---|
 | `frontend/` | Vanilla HTML/CSS/JS SPA served by Cloudflare Pages |
 | `functions/` | Cloudflare Pages Functions: middleware, JWT, RBAC, routing, modules |
-| `functions/_lib/` | Shared edge libraries + business service modules |
+| `functions/_lib/` | Shared edge libraries + business service modules (`backups.js`, `attachments.js`, `ratelimit.js`, `mfa.js`, …) |
 | `shared/` | Constants, enums, repository contract, validation schemas |
-| `apps-script/` | Google Apps Script backend (adapter, data definitions, services) |
+| `apps-script/` | Google Apps Script backend (adapter, data definitions, services, migrations, triggers) |
 | `apps-script/repository/` | **Only** file permitted to use `SpreadsheetApp` |
-| `apps-script/services/` | Domain services (state machines, custody, deposits, alerts, audit) |
-| `migrations/d1/` | Future Cloudflare D1 schema (not active in Phase 1) |
+| `apps-script/services/` | Domain services (state machines, custody, deposits, alerts, audit, backup) |
+| `apps-script/migrations/` | Executable, idempotent M001–M011 migrations + runner |
+| `migrations/d1/` | Reference D1 schema (not active in Phase 2) |
+| `docs/phase2/` | Phase 2 design, migration, ERD, API, security, config and R2 documents |
+| `docs/api/openapi.yaml` | OpenAPI 3.0 spec for Phase 1 + Phase 2 routes |
 
-## Phase 1 scope
+## Phase 1 scope (live, unchanged)
 
-- JWT-only authentication (8 h, RS256), RBAC, warehouse/branch scope enforcement
+- JWT-only authentication, RBAC, warehouse/branch scope enforcement
 - Customer master read from a separate, daily-updated spreadsheet (system of record)
   - Lookup/autocomplete by Account, Name and الاسم الموحد; 5-minute `customer:{Account}` cache
   - Warehouse Group / Customer group inherited by value onto documents; no local master tables
-- Book batches (printing house) with variance + quarantine
-- Books with auto-generated receipts
+- Book batches (printing house) with variance + quarantine; books with auto-generated receipts
 - Receipts validate Account and inherit customer name, warehouse and department
 - Collector custody ledger, balances, reconciliation exceptions
-- Collections, branch/HQ deposits with atomic confirmation
-- Cheques (incl. `CLEARING`), guarantees
-- Alerts (guarantee 30/15/7/expired, cheque overdue, custody variance) with daily scan
+- Collections, branch/HQ deposits with atomic confirmation; cheques (incl. `CLEARING`), guarantees
+- Alerts (guarantee 30/15/7/expired, cheque overdue, custody variance) with 01:00 UTC daily scan
 - Movements for BOOK/RECEIPT/CHEQUE/GUARANTEE, universal tracking
-- Append-only audit (no hash chain in Phase 1)
-- Single operational spreadsheet (existing workbook), `sheet_registry` stored in `tbl_settings`
-- Warehouse reports group by Warehouse Group; department reports group by Customer group
+- Append-only audit, single operational spreadsheet (`sheet_registry` in `tbl_settings`)
+
+## Phase 2 scope (implemented locally; deployment pending)
+
+> **Storage decision:** R2 is skipped. Google Sheets is the primary and only
+> production store. Steps 6 and 12 are implemented locally as dormant reference
+> code, but their API routes, buckets, secrets and daily backup trigger are not
+> part of this rollout. Only Phase 1 storage behaviour is deployed.
+
+| # | Feature | Flag / default | Notes |
+|---|---|---|---|
+| 1 | Audit hash chain | `audit.chainEnabled` — on | `verifyAuditChain()` detects modified, deleted, broken-chain and tail-truncated rows; the chain tip lives in `tbl_settings` |
+| 2 | Refresh tokens & sessions | `auth.refreshEnabled` — **on** | 15 min access JWT, 7 day rotating refresh, reuse detection revokes the whole session family |
+| 3 | MFA (Email OTP + TOTP) | `auth.mfa.enforce` — **off** | ADMIN/TREASURY support; short-lived `cms-mfa` challenge JWT; salted OTP hashes in KV |
+| 4 | Treasury management | `treasury.enforce` — off | `tbl_treasuries`; structured `treasury_id` alongside inherited text fields |
+| 5 | Notifications | `notifications.enabled` — **on** | In-app/email/SMS channels, read state and delivery status |
+| 6 | R2 attachments | — | **DISABLED** — R2 skipped; reference code and tests only, no routes or bucket |
+| 7 | Approval workflow | `approvals.enabled` — **off** | One open request per entity/action, 24 h expiry, self-approval forbidden |
+| 8 | Advanced reporting | — | Aging, collector performance, treasury reconciliation, audit exceptions, KPIs |
+| 9 | Workbook split support | `registry.splitEnabled` — **off** | CORE/DOCS/AUDIT via registry; activates only when `workbook_registry.enabled` is also true |
+| 10 | D1 adapter | `REPOSITORY_ADAPTER` — `sheets` | Reference implementation + contract tests; no binding, never selected |
+| 11 | Rate limiting & lockout | — | Layered KV limits, non-recursive security events, 5 failures → 30 min lock, ADMIN unlock |
+| 12 | Backup & recovery | — | **DISABLED** — R2 skipped; GAS ledger code retained for reference, no route or daily trigger |
+
+New tables: `tbl_sessions`, `tbl_treasuries`, `tbl_attachments`, `tbl_notifications`, `tbl_approvals`, `tbl_security_events`, `tbl_backups`. All new columns on existing tables are appended at the end. See the [canonical ERD](docs/phase2/03-erd-changes.md).
+
+```mermaid
+erDiagram
+    tbl_users ||--o{ tbl_sessions : "has"
+    tbl_users ||--o{ tbl_notifications : "receives"
+    tbl_users ||--o{ tbl_approvals : "requests / decides"
+    tbl_users ||--o{ tbl_security_events : "triggers"
+    tbl_treasuries ||--o{ tbl_cheques : "treasury_id"
+    tbl_treasuries ||--o{ tbl_deposits_hq : "treasury_id"
+    tbl_cheques ||--o{ tbl_attachments : "entity_id"
+    tbl_audit_logs ||--o{ tbl_security_events : "verification events"
+    tbl_settings ||--o{ tbl_backups : "audit-chain anchor"
+```
 
 ## Setup
 
-See **[DEPLOYMENT.md](DEPLOYMENT.md)** for the complete deployment and production
-test checklist (Apps Script Web App, Script Properties, Cloudflare secrets/KV,
-bootstrap, customer-master validation, and security validation).
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for the complete deployment and production test checklist (Apps Script Web App, Script Properties, Cloudflare secrets/KV, bootstrap, migrations and incident response). R2 setup is not part of this rollout.
 
 Quick start:
 
-1. Copy `.dev.vars.example` → `.dev.vars` and fill secrets.
+1. Copy `.dev.vars.example` → `.dev.vars` and fill the Phase 1 secrets. Do **not** add backup secrets.
 2. Generate an RSA key pair for JWT (see `.dev.vars.example`).
-3. Deploy `apps-script/` as a Web App ("Execute as: Me", access: Anyone —
-   requests are HMAC-signed).
-4. Set Apps Script Script Properties (at minimum `GAS_SHARED_SECRET` and
-   `CUSTOMER_MASTER_SPREADSHEET_ID`).
-5. Set Cloudflare Pages secrets and KV namespace IDs in `wrangler.toml`.
-6. Call `POST /api/v1/admin/bootstrap` with `X-Bootstrap-Token`.
-7. Deploy: `npm run deploy`.
+3. Deploy `apps-script/` as a Web App ("Execute as: Me", access: Anyone — requests are HMAC-signed).
+4. Set Apps Script Script Properties: `GAS_SHARED_SECRET`, `CUSTOMER_MASTER_SPREADSHEET_ID`. No backup properties are needed.
+5. Set Cloudflare Pages secrets and KV namespace IDs in `wrangler.toml`. No R2 buckets or bindings are required.
+6. Call `POST /api/v1/admin/bootstrap` with `X-Bootstrap-Token`, then apply migrations M001–M011 via `migration.run`/`migration.verify`.
+7. Deploy: `npm run deploy`. Install only `dailyScanTrigger` (01:00 UTC). `dailyBackupTrigger` is disabled.
 
-Customer master columns are resolved by header text at read time: `Account`, `Name`,
-`Warehouse Group`, `Customer group`, `Eligible credit limit`, `Credit limit`, `Balance`,
-`Payment schedule`, `Worker`, `Worker Name`, `Company chain`, `Segment`, `ID number`,
-`Telephone`, `Account status`, `الاسم الموحد`.
+Customer master columns are resolved by header text at read time: `Account`, `Name`, `Warehouse Group`, `Customer group`, `Eligible credit limit`, `Credit limit`, `Balance`, `Payment schedule`, `Worker`, `Worker Name`, `Company chain`, `Segment`, `ID number`, `Telephone`, `Account status`, `الاسم الموحد`.
 
 ## Tests
 
-`npm test` — repository contract, schema, constants and scope checks in `tests/`.
+`npm test` — 19 files / 137 tests: repository contract (Sheets + mock D1), schemas, constants, scope, hash chain, sessions/JWT, MFA, treasury, notifications, approvals, reporting, workbook registry, D1 adapter, rate limiting/security and lockout. Attachment and backup suites remain as dormant reference tests; neither feature is deployed.
+
+Phase 1 production smoke baseline: all 11 checks green (`health`, login, `auth/me`, three dashboard endpoints, customer autocomplete/search/lookup, and both 404 cases). It verifies the live Phase 1 API only — Phase 2 code is not deployed.

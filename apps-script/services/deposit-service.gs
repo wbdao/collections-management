@@ -22,7 +22,14 @@ var DepositService = (function () {
       total += Number(line.amount_minor || receipt.amount_minor || 0);
     });
 
+    // PHASE 2 / Step 4: structured treasury reference alongside legacy text.
+    var treasuryId = data.treasury_id || TreasuryService.resolveOrDefault(
+      level === 'HQ' ? 'HQ_TREASURY' : 'BRANCH_TREASURY',
+      data.branch_id || data.warehouse || '');
+    TreasuryService.get(treasuryId); // validate the foreign key
+
     var common = {
+      treasury_id: treasuryId,
       deposit_number: (level === 'HQ' ? 'DH-' : 'DB-') + String(Helpers.sequence(level === 'HQ' ? 'DEP_H' : 'DEP_B')).padStart(5, '0'),
       branch_id: data.branch_id,
       deposit_date: data.deposit_date || Helpers.todayIso(),
@@ -67,6 +74,13 @@ var DepositService = (function () {
     if (!deposit) Errors.notFound(entity, depositId);
     Errors.assert(['DRAFT', 'SUBMITTED', 'PARTIAL'].indexOf(deposit.status) >= 0,
       'INVALID_STATE', 'Deposit cannot be confirmed from ' + deposit.status);
+
+    // PHASE 2 / Step 7: HQ deposits are gated when approvals.enabled is true.
+    if (level === 'HQ' && typeof ApprovalService !== 'undefined') {
+      ApprovalService.gate(ctx, 'HQ_DEPOSIT', depositId, 'CONFIRM', {
+        description: 'Confirm HQ deposit ' + (deposit.deposit_number || depositId)
+      });
+    }
 
     var lines = SheetsAdapter.readRows('deposit_lines', {
       where: function (row) { return row.deposit_id === depositId && row.line_status !== 'REJECTED'; },

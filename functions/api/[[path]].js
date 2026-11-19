@@ -23,9 +23,14 @@ import * as alerts from '../_lib/modules/alerts.js';
 import * as movements from '../_lib/modules/movements.js';
 import * as tracking from '../_lib/modules/tracking.js';
 import * as audit from '../_lib/modules/audit.js';
+import * as mfa from '../_lib/modules/mfa.js';
+import * as treasuries from '../_lib/modules/treasuries.js';
+import * as notifications from '../_lib/modules/notifications.js';
+import * as approvals from '../_lib/modules/approvals.js';
 import * as dashboard from '../_lib/modules/dashboard.js';
 import * as reports from '../_lib/modules/reports.js';
 import * as admin from '../_lib/modules/admin.js';
+import * as security from '../_lib/modules/security.js';
 
 import { success, failure } from '../_lib/respond.js';
 import { normalizeError } from '../_lib/errors.js';
@@ -87,12 +92,26 @@ const ROUTES = [
   } },
 
   /* ---- Authentication ---------------------------------------------------- */
-  { method: 'POST', pattern: ['auth', 'login'], validate: 'login', handler: (env, ctx, body) =>
-    auth.login(env, ctx, body.username, body.password) },
-  { method: 'POST', pattern: ['auth', 'logout'], handler: (env, ctx) =>
-    auth.logout(env, ctx) },
+  { method: 'POST', pattern: ['auth', 'login'], validate: 'login', handler: (env, ctx, body, q, p, request) =>
+    auth.login(env, ctx, body.username, body.password, request.headers.get('User-Agent') || '') },
+  { method: 'POST', pattern: ['auth', 'refresh'], validate: 'refresh', mutates: true, handler: (env, ctx, body) =>
+    auth.refresh(env, ctx, body.refreshToken) },
+  { method: 'POST', pattern: ['auth', 'logout'], mutates: true, handler: (env, ctx, body) =>
+    auth.logout(env, ctx, body.all === true) },
   { method: 'GET', pattern: ['auth', 'me'], handler: (env, ctx) =>
     auth.me(env, ctx) },
+  { method: 'GET', pattern: ['auth', 'sessions'], handler: (env, ctx) =>
+    auth.sessions(env, ctx) },
+
+  /* ---- MFA (PHASE 2 / Step 3) -------------------------------------------- */
+  { method: 'POST', pattern: ['auth', 'mfa', 'enroll'], validate: 'mfaEnroll', handler: (env, ctx, body) =>
+    mfa.enroll(env, ctx, body) },
+  { method: 'POST', pattern: ['auth', 'mfa', 'verify'], validate: 'mfaVerify', mutates: true, handler: (env, ctx, body) =>
+    mfa.verify(env, ctx, body) },
+  { method: 'POST', pattern: ['auth', 'mfa', 'disable'], validate: 'mfaDisable', mutates: true, handler: (env, ctx, body) =>
+    mfa.disable(env, ctx, body) },
+  { method: 'POST', pattern: ['auth', 'mfa', 'resend'], validate: 'mfaResend', handler: (env, ctx, body) =>
+    mfa.resend(env, ctx, body) },
 
   /* ---- Admin / bootstrap ------------------------------------------------- */
   { method: 'POST', pattern: ['admin', 'bootstrap'], mutates: true, handler: async (env, ctx) => {
@@ -103,6 +122,16 @@ const ROUTES = [
   { method: 'GET', pattern: ['admin', 'roles'], handler: (env, ctx) => admin.roles(env, ctx) },
   { method: 'GET', pattern: ['admin', 'role-permissions'], handler: (env, ctx) => admin.rolePermissions(env, ctx) },
   { method: 'GET', pattern: ['admin', 'settings'], handler: (env, ctx) => admin.settings(env, ctx) },
+  // PHASE 2 / Step 9 — workbook split (manual cutover; ADMIN only).
+  { method: 'GET', pattern: ['admin', 'registry', 'status'], handler: (env, ctx) =>
+    admin.registryStatus(env, ctx) },
+  { method: 'POST', pattern: ['admin', 'registry', 'split'], mutates: true, handler: (env, ctx, body) =>
+    admin.registrySetSplit(env, ctx, body.enabled) },
+  // PHASE 2 / Step 11 — ADMIN account unlock.
+  { method: 'POST', pattern: ['admin', 'security', 'unlock'], mutates: true, handler: (env, ctx, body) =>
+    admin.unlockUser(env, ctx, body.userId) },
+  // R2 backup routes are intentionally not mounted. Google Sheets is the only
+  // storage backend in this rollout; see DEPLOYMENT.md §14.
 
   /* ---- Customer master (external, daily-updated, READ ONLY) -------------- */
   // Literal paths first; `:account` is the unique customer identifier.
@@ -260,8 +289,63 @@ const ROUTES = [
   { method: 'GET', pattern: ['reports', 'by-department'], handler: (env, ctx, b, q) =>
     reports.byDepartment(env, ctx, q) },
 
+  /* ---- Advanced reporting (PHASE 2 / Step 8) ----------------------------- */
+  { method: 'GET', pattern: ['reports', 'aging'], handler: (env, ctx, b, q) =>
+    reports.aging(env, ctx, q) },
+  { method: 'GET', pattern: ['reports', 'collector-performance'], handler: (env, ctx, b, q) =>
+    reports.collectorPerformance(env, ctx, q) },
+  { method: 'GET', pattern: ['reports', 'treasury-reconciliation'], handler: (env, ctx, b, q) =>
+    reports.treasuryReconciliation(env, ctx, q) },
+  { method: 'GET', pattern: ['reports', 'audit-exceptions'], handler: (env, ctx, b, q) =>
+    reports.auditExceptions(env, ctx, q) },
+  { method: 'GET', pattern: ['reports', 'kpis'], handler: (env, ctx, b, q) =>
+    reports.kpis(env, ctx, q) },
+
+  /* ---- Approvals (PHASE 2 / Step 7) -------------------------------------- */
+  { method: 'GET', pattern: ['approvals'], handler: (env, ctx, b, q) =>
+    approvals.list(env, ctx, q) },
+  { method: 'GET', pattern: ['approvals', ':id'], handler: (env, ctx, b, q, p) =>
+    approvals.get(env, ctx, p.id) },
+  { method: 'POST', pattern: ['approvals', ':id', 'approve'], validate: 'approvalDecision', mutates: true, handler: (env, ctx, body, q, p) =>
+    approvals.decide(env, ctx, p.id, 'approve', body) },
+  { method: 'POST', pattern: ['approvals', ':id', 'reject'], validate: 'approvalDecision', mutates: true, handler: (env, ctx, body, q, p) =>
+    approvals.decide(env, ctx, p.id, 'reject', body) },
+
+  // R2 attachment routes are intentionally not mounted. Google Sheets is the
+  // only storage backend in this rollout; see DEPLOYMENT.md §14.
+
+  /* ---- Notifications (PHASE 2 / Step 5) ---------------------------------- */
+  { method: 'GET', pattern: ['notifications'], handler: (env, ctx, b, q) =>
+    notifications.list(env, ctx, q) },
+  { method: 'GET', pattern: ['notifications', 'summary'], handler: (env, ctx) =>
+    notifications.summary(env, ctx) },
+  { method: 'PATCH', pattern: ['notifications', ':id', 'read'], handler: (env, ctx, b, q, p) =>
+    notifications.markRead(env, ctx, p.id) },
+  { method: 'POST', pattern: ['notifications', 'read-all'], handler: (env, ctx) =>
+    notifications.markAllRead(env, ctx) },
+
+  /* ---- Treasuries (PHASE 2 / Step 4) ------------------------------------- */
+  { method: 'GET', pattern: ['treasuries'], handler: (env, ctx, b, q) =>
+    treasuries.list(env, ctx, q) },
+  { method: 'POST', pattern: ['treasuries'], validate: 'treasury', mutates: true, handler: (env, ctx, body) =>
+    treasuries.create(env, ctx, body) },
+  { method: 'GET', pattern: ['treasuries', ':id'], handler: (env, ctx, b, q, p) =>
+    treasuries.get(env, ctx, p.id) },
+  { method: 'PATCH', pattern: ['treasuries', ':id'], validate: 'treasuryPatch', mutates: true, handler: (env, ctx, body, q, p) =>
+    treasuries.update(env, ctx, p.id, body) },
+
   /* ---- Audit (append-only, Phase 1) ------------------------------------- */
-  { method: 'GET', pattern: ['audit'], handler: (env, ctx, b, q) => audit.list(env, ctx, q) }
+  { method: 'GET', pattern: ['audit'], handler: (env, ctx, b, q) => audit.list(env, ctx, q) },
+
+  /* ---- Audit integrity (PHASE 2 / Step 1) -------------------------------- */
+  { method: 'GET', pattern: ['audit', 'verify'], handler: (env, ctx) => audit.verify(env, ctx) },
+  { method: 'GET', pattern: ['audit', 'chain', 'status'], handler: (env, ctx) => audit.chainStatus(env, ctx) },
+
+  /* ---- Security (PHASE 2 / Step 11) -------------------------------------- */
+  { method: 'GET', pattern: ['security', 'events'], handler: (env, ctx, b, q) =>
+    security.events(env, ctx, q) },
+  { method: 'GET', pattern: ['security', 'me'], handler: (env, ctx) =>
+    security.me(env, ctx) }
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -304,6 +388,9 @@ export async function onRequest(context) {
       await invalidate(env, ['dashboard:summary', 'dashboard:custody', 'tracking']);
     }
 
+    // Download handlers return a raw streaming Response with no-store headers;
+    // never wrap it in a JSON envelope.
+    if (result instanceof Response) return result;
     return success(result, {}, 200, ctx.requestId);
   } catch (error) {
     const normalized = normalizeError(error);

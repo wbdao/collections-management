@@ -31,6 +31,16 @@ var AlertService = (function () {
       operation: 'ALERT_RAISED', entityType: 'alerts', entityId: alert.alert_id,
       oldValue: null, newValue: { alert_type: alert.alert_type, bucket: alert.bucket }, result: 'SUCCESS'
     });
+    // PHASE 2 / Step 5: a newly raised alert fans out to in-app notifications.
+    if (typeof NotificationService !== 'undefined') {
+      NotificationService.raise(ctx, {
+        notificationType: input.alertType,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        bucket: input.bucket,
+        warehouse: input.warehouse || ''
+      });
+    }
     return { alert: alert, created: true };
   }
 
@@ -111,7 +121,9 @@ var AlertService = (function () {
 
   function summary() {
     var rows = SheetsAdapter.readRows('alerts', { where: function (r) { return r.status === 'ACTIVE'; } });
-    var result = { GUARANTEE_EXPIRY: {}, CHEQUE_OVERDUE: 0, CUSTODY_VARIANCE: 0 };
+    var result = {
+      GUARANTEE_EXPIRY: {}, CHEQUE_OVERDUE: 0, CUSTODY_VARIANCE: 0, FAILED_RECONCILIATION: 0
+    };
     rows.forEach(function (row) {
       if (row.alert_type === 'GUARANTEE_EXPIRY') {
         result.GUARANTEE_EXPIRY[row.bucket] = (result.GUARANTEE_EXPIRY[row.bucket] || 0) + 1;
@@ -119,6 +131,8 @@ var AlertService = (function () {
         result.CHEQUE_OVERDUE++;
       } else if (row.alert_type === 'CUSTODY_VARIANCE') {
         result.CUSTODY_VARIANCE++;
+      } else if (row.alert_type === 'FAILED_RECONCILIATION') {
+        result.FAILED_RECONCILIATION++;
       }
     });
     return result;

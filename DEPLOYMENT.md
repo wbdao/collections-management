@@ -1,4 +1,8 @@
-# Deployment & Production Test Guide — Collections Management System Phase 1
+# Deployment & Production Test Guide — Collections Management System (Phase 1 + Phase 2)
+
+> **Status:** Phase 1 is live and verified (§13). Phase 2 Steps 1–12 are
+> implemented and validated locally but **not deployed** — see §14 for the
+> Phase 2 configuration, migration, operations and explicit approval gate.
 
 > Audit baseline: local checkout at `D:\Collecting`, corresponding to
 > `https://github.com/wbdao/collections-management.git`.
@@ -113,12 +117,15 @@ audit; remaining blockers are configuration/deployment credentials.
 | `JWT_AUDIENCE` | Expected `aud` claim (default `cms-web`) | Optional (default works) |
 | `BOOTSTRAP_TOKEN` | One-time bootstrap header token | **MISSING** |
 
+`BACKUP_SERVICE_TOKEN` and `BACKUP_SIGNING_KEY` are **not used** — R2 is skipped. They may already exist in Cloudflare but are ignored by this rollout.
+
 ### Cloudflare bindings / vars
 
 | Name | Purpose | Status |
 |---|---|---|
-| `KV` | Cache, rate limit, idempotency | Binding exists; **IDs are placeholders** |
-| `ENVIRONMENT`, `API_BASE` | Non-sensitive vars | Present in `wrangler.toml` |
+| `KV` | Cache, rate limit, idempotency | Binding exists; production IDs configured in `wrangler.toml` |
+| `ENVIRONMENT`, `API_BASE`, `REPOSITORY_ADAPTER`, `CACHE_TTL_SECONDS` | Non-sensitive vars | Present in `wrangler.toml` (`REPOSITORY_ADAPTER = sheets`) |
+| ~~`ATTACHMENTS_BUCKET`, `BACKUPS_BUCKET`~~ | ~~Phase 2: private R2 bindings~~ | **Removed** — R2 skipped; Google Sheets is the only store |
 
 > Note: `SPREADSHEET_ID` is **not** a Cloudflare variable. It is an Apps Script
 > Script Property (see §4).
@@ -353,7 +360,7 @@ Expected (counts vary on re-run):
 | Default admin password | Try `Admin@12345` | **Must fail** — change before prod |
 | CORS | Wildcard `Access-Control-Allow-Origin` | Acceptable: auth header required; frontend uses `same-origin` |
 | Password KDF | Custom PBKDF2-HMAC-SHA256, 2000 iterations | Works, but below modern guidance — plan upgrade |
-| Token revocation | No refresh/revoke by design | 8h lifetime; rotate keys to revoke globally |
+| Token revocation | Phase 1: 8h lifetime, rotate keys to revoke globally. Phase 2 (pending deploy): 15m access token + refresh/session revocation | Verify `TOKEN_REVOKED`, `REFRESH_INVALID`, `REFRESH_REUSE` after Phase 2 deploy |
 
 ### Residual risks / follow-ups (not Phase 1 blockers)
 
@@ -444,3 +451,100 @@ Expected (counts vary on re-run):
   `auth/me`, `dashboard/summary`, `dashboard/custody`, both customer
   autocomplete variants and `customers/CUST020208` all returned 200;
   `track/BOOK/NO-SUCH` returned the expected 404.
+
+---
+
+## 14. Phase 2 — configuration, migration & operations (pending approval)
+
+Nothing in this section is live. Phase 2 code is committed to the local working
+tree only. **Do not** run `clasp push --force`, `clasp deploy`, or a Pages
+production deploy until the user explicitly approves it.
+
+When the Apps Script push is approved, run `clasp` **from `apps-script/`** so the
+complete `apps-script/.clasp.json` push order is used (it includes
+`services/backup-service.gs` and all Phase 2 services/migrations). The older
+root `.clasp.json` has only the Phase 1 push order.
+
+### 14.1 Additional configuration — Google Sheets only
+
+**R2 is skipped.** Step 6 (attachments) and Step 12 (backups) are implemented
+locally as dormant reference code, but:
+
+- no `ATTACHMENTS_BUCKET` / `BACKUPS_BUCKET` bindings exist in `wrangler.toml`;
+- no R2 buckets, versioning or lifecycle rules are created;
+- `POST/GET /api/v1/attachments` and `POST/GET /api/v1/admin/backups` are **not
+  mounted** and return `404 NOT_FOUND`;
+- `BACKUP_SERVICE_TOKEN`, `BACKUP_SIGNING_KEY` and `BACKUP_EDGE_URL` are
+  **not required** (including as Apps Script Script Properties);
+- `installDailyBackupTrigger()` is inert and `dailyBackupTrigger()` is a no-op.
+
+Install only `dailyScanTrigger` (01:00 UTC, already live in Phase 1). Do **not**
+install `dailyBackupTrigger`.
+
+No additional Cloudflare secrets or Apps Script properties are needed beyond
+the Phase 1 set in §3 and §4.
+
+### 14.2 Migration runbook (M001–M011)
+
+Migrations are additive: new sheets plus columns **appended at the end** of
+existing tables. There are no destructive column moves or deletes.
+
+1. Take a one-off export/copy of the production workbook before M001.
+2. Apply in this order: **M011** (flags/permissions) → **M008** (security events)
+   + **M001** (audit chain) → **M002, M003, M004, M005, M006, M007, M009, M010**.
+3. After each, call `migration.verify` and confirm `{ ok: true }`. Check
+   `migration.status` for the full manifest. These are signed Apps Script
+   router actions — there is no public REST route for them.
+4. Backfill verification: audit hashes (`M001`), treasury FKs (`M004`) and
+   registry placement (`M010`) must report zero unresolved rows before flags
+   are enabled.
+
+Default flag state after migration: `auth.refreshEnabled = true`;
+`audit.chainEnabled = true`; `auth.mfa.enforce`, `approvals.enabled`,
+`registry.splitEnabled` and `treasury.enforce` remain **false** until
+explicitly enabled. Workbook split activates only when both
+`workbook_registry.enabled` and `registry.splitEnabled` are true.
+
+### 14.3 Feature behaviour to validate after deploy
+
+| Area | Endpoint / action | Expected |
+|---|---|---|
+| Refresh rotation | `POST /auth/refresh` | New access JWT (15 min) + new refresh token; predecessor session `revoked_at` set |
+| Reuse detection | Replay an old refresh token | `401 REFRESH_REUSE`; **all** sessions for that user revoked |
+| Logout | `POST /auth/logout`, `logout {all:true}` | Current session / all user sessions revoked |
+| MFA enrol | `POST /auth/mfa/enroll`, `verify` | TOTP (SHA256) or Email OTP accepted; `cms-mfa` challenge token only works on `/auth/mfa/*` |
+| Audit integrity | `GET /audit/verify`, `/audit/chain/status` | `{valid:true}`; tampering writes `AUDIT_VERIFY_FAILED` + `tbl_security_events` and an appended `FAILURE` audit row |
+| Lockout | 5 bad passwords | `ACCOUNT_LOCKED` event, 30-minute `users.locked_until`; ADMIN `POST /admin/security/unlock` clears it |
+| Rate limits | Flood an IP / user / MFA | `429 RATE_LIMITED` + one deduped `RATE_LIMITED` security event per minute; logging never recurses into the limiter |
+| Security views | `GET /security/events`, `/security/me` | ADMIN/AUDITOR see the log (scoped roles need explicit scopes); any user sees their own posture |
+| R2 routes | `GET /attachments`, `GET/POST /admin/backups` | `404 NOT_FOUND` — intentionally unmounted; no bucket or trigger is used |
+| Approvals | gated mutations (while flag off) | No behaviour change; with flag on, one open request per entity/action, 24 h expiry, no self-approval |
+| Reports | `GET /reports/aging`, `/collector-performance`, `/treasury-reconciliation`, `/audit-exceptions`, `/kpis` | Permission-gated as documented in `docs/phase2/04-api-changes.md` |
+
+### 14.4 Backup verification & restore — not applicable
+
+R2 backup/restore is **out of scope**. The R2-backed backup endpoint and daily
+trigger are disabled; no R2 object or audit-tip checkpoint is produced.
+
+Use the normal Google Workspace version history / protected-range controls for
+the operational spreadsheet, plus the audit hash chain in `tbl_audit_logs` and
+`tbl_settings.audit_chain_tip` for integrity verification. The dormant GAS
+backup service and its unit tests are reference code only and must not be used
+as the production backup procedure.
+
+### 14.5 Incident response
+
+| Signal | Action |
+|---|---|
+| `HASH_CHAIN_INVALID` / `audit.verify` fails | Do **not** edit `tbl_audit_logs`. Snapshot the chain, read `tbl_security_events`, compare with `tbl_settings.audit_chain_tip`, and escalate. |
+| `REFRESH_REUSE` | Treat as token theft: the user family is already revoked; force password reset and review `tbl_sessions` + security events. |
+| `ACCOUNT_LOCKED` storms | Check whether the source is a single IP (rate limiter) or distributed; do not bulk-unlock without investigating. |
+| `BACKUP_FAILED` (legacy only) | No active backup job exists in this rollout. Treat any such event as reference/test data; verify Google Workspace version history and the audit chain instead. |
+
+### 14.6 Local validation evidence before approval
+
+- `npm test`: **19 files / 137 tests, 0 failures**.
+- Syntax checks: clean for all changed `.js`/`.gs` files.
+- Phase 1 production smoke set: **11/11** checks green (regression baseline).
+- No `clasp push --force`, `clasp deploy` or Pages production deploy has been
+  performed for Phase 2.

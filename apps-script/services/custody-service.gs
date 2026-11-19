@@ -182,6 +182,13 @@ var CustodyService = (function () {
         });
       }
     });
+    if (exceptions.length) {
+      // PHASE 2 / Step 5: a failed reconciliation is its own alert category.
+      AlertService.raise(ctx, {
+        alertType: 'FAILED_RECONCILIATION', entityType: 'reconciliation_exceptions',
+        entityId: 'RUN_' + Helpers.todayIso(), bucket: 'NA', dueDate: Helpers.todayIso()
+      });
+    }
     AuditService.write(ctx, {
       operation: 'CUSTODY_RECONCILE', entityType: 'custody_balances', entityId: 'all',
       oldValue: null, newValue: { exceptionsCreated: exceptions.length }, result: 'SUCCESS'

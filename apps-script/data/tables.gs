@@ -34,7 +34,9 @@ var TABLES = {
   users: table('tbl_users', [
     'user_id', 'username', 'password_hash', 'full_name', 'email',
     'role_id', 'status', 'failed_attempts', 'last_login_at'
-  ].concat(STANDARD_TIME, ['version'], STANDARD_SOFT),
+  ].concat(STANDARD_TIME, ['version'], STANDARD_SOFT,
+    // PHASE 2 (M003) — appended at the END so existing row data never shifts.
+    ['mfa_enabled', 'mfa_secret', 'locked_until']),
     { unique: ['username', 'email'], versioned: true, softDelete: true }),
 
   roles: table('tbl_roles', ['role_id', 'name', 'description'], { unique: ['name'] }),
@@ -87,13 +89,13 @@ var TABLES = {
   deposits_branch: table('tbl_deposits_branch', [
     'deposit_id', 'deposit_number', 'deposit_date', 'prepared_by', 'approved_by',
     'receipt_count', 'total_minor', 'status', 'notes'
-  ].concat(['version'], STANDARD_TIME, STANDARD_SOFT),
+  ].concat(['version'], STANDARD_TIME, STANDARD_SOFT, ['treasury_id']),
     { unique: ['deposit_number'], versioned: true, softDelete: true }),
 
   deposits_hq: table('tbl_deposits_hq', [
     'deposit_id', 'deposit_number', 'hq_reference', 'deposit_date', 'prepared_by',
     'received_by', 'receipt_count', 'total_minor', 'status', 'notes'
-  ].concat(['version'], STANDARD_TIME, STANDARD_SOFT),
+  ].concat(['version'], STANDARD_TIME, STANDARD_SOFT, ['treasury_id']),
     { unique: ['deposit_number'], versioned: true, softDelete: true }),
 
   deposit_lines: table('tbl_deposit_lines', [
@@ -108,14 +110,14 @@ var TABLES = {
     'warehouse', 'department', 'cheque_date', 'due_date', 'amount_minor', 'bank',
     'status', 'clearing_started_at', 'expected_clear_date', 'bank_reference',
     'cleared_at', 'return_reason', 'current_holder', 'current_location', 'last_movement_id'
-  ].concat(['version'], STANDARD_TIME, STANDARD_SOFT),
+  ].concat(['version'], STANDARD_TIME, STANDARD_SOFT, ['treasury_id']),
     { unique: ['cheque_number'], versioned: true, softDelete: true }),
 
   guarantees: table('tbl_guarantees', [
     'guarantee_id', 'guarantee_number', 'customer_code', 'customer_name',
     'warehouse', 'department', 'contract_number', 'amount_minor', 'issue_date',
     'expiry_date', 'status', 'current_holder', 'current_location', 'last_movement_id'
-  ].concat(['version'], STANDARD_TIME, STANDARD_SOFT),
+  ].concat(['version'], STANDARD_TIME, STANDARD_SOFT, ['treasury_id']),
     { unique: ['guarantee_number'], versioned: true, softDelete: true }),
 
   /* ---- Movement, custody & reconciliation ------------------------------- */
@@ -124,7 +126,7 @@ var TABLES = {
     'from_location', 'to_location', 'from_holder_id', 'to_holder_id',
     'movement_date', 'performed_by', 'authorized_by', 'reason', 'notes',
     'related_deposit_id', 'request_id'
-  ].concat(['version'], STANDARD_TIME, STANDARD_SOFT),
+  ].concat(['version'], STANDARD_TIME, STANDARD_SOFT, ['treasury_id']),
     { versioned: true, softDelete: true }),
 
   custody_ledger: table('tbl_custody_ledger', [
@@ -155,6 +157,9 @@ var TABLES = {
   audit_logs: table('tbl_audit_logs', [
     'audit_id', 'request_id', 'user_id', 'operation', 'entity_type', 'entity_id',
     'old_value', 'new_value', 'changed_fields', 'timestamp', 'ip_address', 'result'
+    // PHASE 2 (M001) — hash chain. Appended at the END; existing rows keep their
+    // physical columns and are backfilled by migration M001.
+    , 'audit_hash', 'previous_hash'
   ], { appendOnly: true }),
 
   processed_requests: table('tbl_processed_requests', [
@@ -176,7 +181,44 @@ var TABLES = {
 
   sequences: table('tbl_sequences', ['name', 'next_value', 'updated_at'], { id: 'name' }),
 
-  settings: table('tbl_settings', ['key', 'value_json', 'description', 'updated_by', 'updated_at'], { id: 'key' })
+  settings: table('tbl_settings', ['key', 'value_json', 'description', 'updated_by', 'updated_at'], { id: 'key' }),
+
+  /* ---- PHASE 2 tables (additive — created by M002..M009) ----------------- */
+  sessions: table('tbl_sessions', [
+    'session_id', 'user_id', 'refresh_token_hash', 'device_info', 'ip_address',
+    'created_at', 'expires_at', 'revoked_at'
+  ], { id: 'session_id', unique: ['session_id'] }),
+
+  treasuries: table('tbl_treasuries', [
+    'treasury_id', 'treasury_name', 'treasury_type', 'warehouse', 'status'
+  ], { id: 'treasury_id', unique: ['treasury_id'] }),
+
+  attachments: table('tbl_attachments', [
+    'attachment_id', 'entity_type', 'entity_id', 'file_name', 'r2_key',
+    'uploaded_by', 'uploaded_at',
+    // PHASE 2 / Step 6 — appended at end only (migration-safe).
+    'content_type', 'size_bytes', 'checksum', 'is_deleted', 'deleted_at', 'deleted_by'
+  ], { id: 'attachment_id', unique: ['attachment_id'], softDelete: true }),
+
+  notifications: table('tbl_notifications', [
+    'notification_id', 'user_id', 'notification_type', 'entity_type', 'entity_id',
+    'title', 'body', 'channel', 'status', 'created_at', 'read_at', 'delivery_status'
+  ], { id: 'notification_id', unique: ['notification_id'] }),
+
+  approvals: table('tbl_approvals', [
+    'approval_id', 'entity_type', 'entity_id', 'action', 'requested_by', 'requested_at',
+    'status', 'approver_id', 'decided_at', 'decision_notes', 'expires_at'
+  ], { id: 'approval_id', unique: ['approval_id'] }),
+
+  security_events: table('tbl_security_events', [
+    'event_id', 'event_type', 'user_id', 'ip_address', 'request_id',
+    'details_json', 'severity', 'created_at'
+  ], { id: 'event_id', appendOnly: true }),
+
+  backups: table('tbl_backups', [
+    'backup_id', 'scope', 'workbook_ids', 'r2_key', 'size_bytes', 'checksum',
+    'status', 'started_at', 'completed_at', 'retention_until'
+  ], { id: 'backup_id', unique: ['backup_id'] })
 };
 
 /**
@@ -184,7 +226,7 @@ var TABLES = {
  * Keyed by entity, then column name. Values mirror apps-script/constants.gs.
  */
 var COLUMN_VALIDATIONS = {
-  users: { status: ['ACTIVE', 'DISABLED', 'LOCKED'] },
+  users: { status: ['ACTIVE', 'DISABLED', 'LOCKED'], mfa_enabled: [true, false, 'TRUE', 'FALSE'] },
   roles: { name: ['ADMIN', 'BRANCH_MANAGER', 'COLLECTOR', 'TREASURY', 'AUDITOR'] },
   user_scopes: { scope_type: ['WAREHOUSE', 'BRANCH', 'USER'] },
 
@@ -230,7 +272,23 @@ var COLUMN_VALIDATIONS = {
     bucket: ALERT_BUCKETS,
     status: ['OPEN', 'ACKNOWLEDGED', 'CLOSED']
   },
-  audit_logs: { result: ['SUCCESS', 'FAILURE'] }
+  audit_logs: { result: ['SUCCESS', 'FAILURE'] },
+
+  /* ---- PHASE 2 validations ---------------------------------------------- */
+  treasuries: { treasury_type: ['BRANCH', 'HQ'], status: ['ACTIVE', 'INACTIVE'] },
+  attachments: { entity_type: ['CHEQUE', 'GUARANTEE', 'DEPOSIT'] },
+  notifications: {
+    notification_type: ['GUARANTEE_EXPIRY', 'CHEQUE_OVERDUE', 'CUSTODY_VARIANCE', 'FAILED_RECONCILIATION'],
+    channel: ['IN_APP', 'EMAIL', 'SMS'],
+    status: ['UNREAD', 'READ', 'ARCHIVED'],
+    delivery_status: ['N/A', 'PENDING', 'SENT', 'FAILED']
+  },
+  approvals: {
+    entity_type: ['HQ_DEPOSIT', 'CHEQUE_STATUS_CHANGE', 'GUARANTEE_RELEASE'],
+    status: ['PENDING_APPROVAL', 'APPROVED', 'REJECTED']
+  },
+  security_events: { severity: ['INFO', 'WARNING', 'CRITICAL'] },
+  backups: { status: ['RUNNING', 'COMPLETED', 'FAILED'] }
 };
 
 /** The five default operational roles. */
@@ -243,4 +301,8 @@ var SEED_ROLES = [
 ];
 
 /** Sheets that must be locked against manual editing after every bootstrap run. */
-var PROTECTED_SHEETS = ['tbl_audit_logs', 'idx_tracking', 'idx_id_map', 'tbl_sequences'];
+var PROTECTED_SHEETS = [
+  'tbl_audit_logs', 'idx_tracking', 'idx_id_map', 'tbl_sequences',
+  // PHASE 2 — append-only / security-sensitive sheets
+  'tbl_security_events', 'tbl_sessions'
+];

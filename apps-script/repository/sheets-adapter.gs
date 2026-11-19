@@ -8,9 +8,63 @@
 var SheetsAdapter = (function () {
   var SETTINGS_SHEET = 'tbl_settings'; // internal adapter constant, allowed here only
   var registryCacheKey = 'cms_sheet_registry_v1';
+  var WORKBOOK_REGISTRY_KEY = 'workbook_registry';
+  var SPLIT_FLAG_KEY = 'registry.splitEnabled';
+  var workbookCache = {};
+  // Internal control tables always live in CORE. Forcing them here prevents a
+  // misconfigured registry from moving the very settings sheet that stores the
+  // registry (and also breaks the read cycle explained in getSettingDirect()).
+  var CORE_ONLY = {
+    settings: true, idx_id_map: true, sequences: true, processed_requests: true
+  };
 
   function getSpreadsheet() {
     return SpreadsheetApp.openById(CONFIG.spreadsheetId);
+  }
+
+  /** PHASE 2 (M010): open a workbook by id, with a per-script-run cache. */
+  function getWorkbook(id) {
+    var workbookId = String(id || CONFIG.coreSpreadsheetId);
+    if (!workbookCache[workbookId]) {
+      workbookCache[workbookId] = SpreadsheetApp.openById(workbookId);
+    }
+    return workbookCache[workbookId];
+  }
+
+  /**
+   * Reads a tbl_settings value straight from the CORE sheet, bypassing
+   * getSetting()/getSheet(). getSetting() calls findRow('settings') →
+   * readRows('settings') → getSheet('settings') → workbookIdFor(), so calling
+   * it from workbookIdFor() would recurse forever. Settings are CORE-only, so
+   * this direct read is both correct and cycle-free.
+   */
+  function getSettingDirect(key) {
+    var sheet = getWorkbook(CONFIG.coreSpreadsheetId).getSheetByName(SETTINGS_SHEET);
+    if (!sheet || sheet.getLastRow() < 2) return null;
+    var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+    for (var i = 0; i < values.length; i++) {
+      if (values[i][0] === key) return Helpers.fromJson(values[i][1]);
+    }
+    return null;
+  }
+
+  function getWorkbookRegistry() {
+    return getSettingDirect(WORKBOOK_REGISTRY_KEY) || null;
+  }
+
+  /**
+   * Entities stay in CORE until BOTH the registry `enabled` flag and the
+   * `registry.splitEnabled` policy flag are true. Requiring both is fail-closed:
+   * flipping either flag alone never activates a split. CORE-only control
+   * tables are pinned to CORE regardless of the registry.
+   */
+  function workbookIdFor(entity) {
+    if (CORE_ONLY[entity]) return CONFIG.coreSpreadsheetId;
+    var registry = getWorkbookRegistry();
+    if (!registry || !registry.enabled) return CONFIG.coreSpreadsheetId;
+    if (getSettingDirect(SPLIT_FLAG_KEY) !== true) return CONFIG.coreSpreadsheetId;
+    var name = (registry.entities && registry.entities[entity]) || 'CORE';
+    return registry[name] || CONFIG.coreSpreadsheetId;
   }
 
   function getCache() {
@@ -88,8 +142,14 @@ var SheetsAdapter = (function () {
         }
       }
     }
+    var workbookRegistry = getWorkbookRegistry();
     Object.keys(TABLES).forEach(function (entity) {
       if (!registry[entity]) registry[entity] = { sheet: TABLES[entity].sheet, workbookId: CONFIG.spreadsheetId };
+      if (workbookRegistry) {
+        var name = (workbookRegistry.entities && workbookRegistry.entities[entity]) || 'CORE';
+        registry[entity].workbook = name;
+        registry[entity].workbookId = workbookIdFor(entity);
+      }
     });
     getCache().put(registryCacheKey, JSON.stringify(registry), CONFIG.cacheTtlSeconds);
     return registry;
@@ -97,6 +157,7 @@ var SheetsAdapter = (function () {
 
   function clearRegistryCache() {
     getCache().remove(registryCacheKey);
+    workbookCache = {};
   }
 
   function sheetName(entity) {
@@ -106,7 +167,7 @@ var SheetsAdapter = (function () {
   }
 
   function getSheet(entity) {
-    return getSpreadsheet().getSheetByName(sheetName(entity));
+    return getWorkbook(workbookIdFor(entity)).getSheetByName(sheetName(entity));
   }
 
   function tableName(entity) { return TABLES[entity]; }
@@ -124,7 +185,7 @@ var SheetsAdapter = (function () {
    * where required. Safe to re-run — existing sheets are updated in place.
    */
   function createSheet(entity) {
-    var ss = getSpreadsheet();
+    var ss = getWorkbook(workbookIdFor(entity));
     var name = sheetName(entity);
     var existing = ss.getSheetByName(name);
     var sheet = existing || ss.insertSheet(name);
@@ -406,6 +467,9 @@ var SheetsAdapter = (function () {
 
   return {
     getSpreadsheet: getSpreadsheet,
+    getWorkbook: getWorkbook,
+    getWorkbookRegistry: getWorkbookRegistry,
+    workbookIdFor: workbookIdFor,
     readCustomerMaster: readCustomerMaster,
     getRegistry: getRegistry,
     clearRegistryCache: clearRegistryCache,
@@ -427,6 +491,7 @@ var SheetsAdapter = (function () {
     updateIdMap: updateIdMap,
     nextSequence: nextSequence,
     getSetting: getSetting,
+    getSettingDirect: getSettingDirect,
     setSetting: setSetting,
     withTransaction: withTransaction
   };
