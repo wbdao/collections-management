@@ -541,10 +541,23 @@ as the production backup procedure.
 | `ACCOUNT_LOCKED` storms | Check whether the source is a single IP (rate limiter) or distributed; do not bulk-unlock without investigating. |
 | `BACKUP_FAILED` (legacy only) | No active backup job exists in this rollout. Treat any such event as reference/test data; verify Google Workspace version history and the audit chain instead. |
 
-### 14.6 Local validation evidence before approval
+### 14.6 Final rollout evidence (2026-11-19)
 
 - `npm test`: **19 files / 137 tests, 0 failures**.
 - Syntax checks: clean for all changed `.js`/`.gs` files.
-- Phase 1 production smoke set: **11/11** checks green (regression baseline).
-- No `clasp push --force`, `clasp deploy` or Pages production deploy has been
-  performed for Phase 2.
+- Apps Script: pushed and deployed as Web App **@24** on the original URL;
+  `webapp.access = ANYONE_ANONYMOUS` (أي شخص) verified via the Apps Script API.
+  The temporary migration branch, token, probe file and deployment were removed.
+- Migrations: **M001–M011 applied**, `failed: []`, `pending: []`, full
+  `migration.verify` pass `allValid: true`. M001 forces plain-text formatting
+  on the hash columns so Sheets cannot coerce the all-zero genesis to numeric `0`.
+- Cloudflare Pages: production deployment **df2dc977** built from commit
+  **`1a1308b`** by GitHub Actions (run `44534845036`, success). A direct Wrangler
+  deploy `3cb364d9` preceded it while GitHub was unreachable; both served the same code.
+- Secrets: only the seven Phase 1 secrets remain. Unused `BACKUP_SERVICE_TOKEN`
+  and `BACKUP_SIGNING_KEY` were deleted from the production environment.
+- Smoke after deploy: Phase 1 **11/11**, Phase 2 **11/11** (sessions, reports,
+  notifications, treasuries, approvals, audit, security, registry).
+- Audit: `GET /audit/verify` returned `valid: true`, `recordsChecked: 31`.
+- Feature flags remain off by default: `auth.mfa.enforce`, `approvals.enabled`
+  and `registry.splitEnabled` (split needs both registry flags).
