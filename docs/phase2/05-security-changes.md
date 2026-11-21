@@ -1,6 +1,6 @@
 # Phase 2 — Security Changes (Design)
 
-**Status:** Approved; implemented locally (15m tokens, rotation/reuse detection, MFA, lockout, layered limits, security events). Production deployment pending approval.
+**Status:** **Live in production** (15m tokens, rotation/reuse detection, MFA, lockout, layered limits, security events). A follow-up hardening pass shipped 2026-11-21 (`f08b537`): public-field projection on `/admin/users`, 5-min MFA challenge TTL with `Bearer` transport, same-second revocation, no default admin password, and scope guards on detail reads/subresources/mutations.
 
 > **Rollout update:** R2 is skipped. No `R2_*` binding or backup secrets are
 > required; KV is used only for cache, revocation, OTP, idempotency and rate

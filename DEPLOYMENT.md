@@ -1,8 +1,10 @@
 # Deployment & Production Test Guide — Collections Management System (Phase 1 + Phase 2)
 
-> **Status:** Phase 1 is live and verified (§13). Phase 2 Steps 1–12 are
-> implemented and validated locally but **not deployed** — see §14 for the
-> Phase 2 configuration, migration, operations and explicit approval gate.
+> **Status:** Phase 1 and Phase 2 are both **live and verified** (§13, §14.6).
+> Phase 2 shipped on 2026-11-19; high-severity security hardening shipped on
+> 2026-11-21 (commit `f08b537`, Pages deployment `64e25b99`, GAS Web App `@25`).
+> R2 attachments/backups (Steps 6 and 12) remain skipped — Google Sheets is the
+> only production store. See §15 for the isolated staging environment.
 
 > Audit baseline: local checkout at `D:\Collecting`, corresponding to
 > `https://github.com/wbdao/collections-management.git`.
@@ -77,15 +79,15 @@ Business services never call `SpreadsheetApp`; verified only
 | Static verification | PASS | 27/27 headers, 123 imports, 159 exports, bootstrap structure |
 | Automated tests | READY (added) | `npm test` now has 4 suites |
 | CI/CD workflow | READY (added) | `.github/workflows/deploy.yml` |
-| Cloudflare config | **BLOCKED** | KV IDs are placeholders; secrets must be set |
-| Apps Script config | **BLOCKED** | Script Properties not set; Web App not deployed |
-| Customer master ID | **BLOCKED** | Not provided to the project |
-| Bootstrap execution | **PENDING** | Must run once after deployment |
-| Live HMAC round-trip | **PENDING** | Verify edge↔GAS signature compatibility |
-| `package-lock.json` | MISSING | Created by `npm install` (not present in checkout) |
+| Cloudflare config | **RESOLVED** | KV IDs injected by `deploy.yml`; 7 secrets uploaded (§13, §14.6) |
+| Apps Script config | **RESOLVED** | Script Properties set; Web App deployed `@25`, access `أي شخص` |
+| Customer master ID | **RESOLVED** | `1U5mxsJIKZ_eVMlEgSZQBuBNJUEH7zX4Z` in use |
+| Bootstrap execution | **DONE** | Bootstrap and M001-M011 applied/verified in production |
+| Live HMAC round-trip | **VERIFIED** | Signed edge↔GAS traffic works; tampered signatures rejected |
+| `package-lock.json` | PRESENT | Committed for reproducible CI |
 
-**Overall: not yet deployable.** All code-level blockers were fixed during the
-audit; remaining blockers are configuration/deployment credentials.
+**Overall: deployed and verified.** This table records the original audit
+blockers and their resolution; current live state is in §13 and §14.6–14.7.
 
 ### Fixes applied during this audit
 
@@ -142,7 +144,7 @@ Set under **Project Settings → Script Properties**:
 | `CUSTOMER_MASTER_SPREADSHEET_ID` | **YES** (customer features) | ID of the daily-updated customer workbook — **not yet provided** |
 | `CUSTOMER_MASTER_SHEET_NAME` | No | `قاعده عملاء الشركه` (default) |
 | `SPREADSHEET_ID` | No | Defaults to `12GyVXdmKlIZUy6evNhQK2IKJjZ8olWtEn6WxuPSunLI` |
-| `BOOTSTRAP_ADMIN_PASSWORD` | **YES in production** | Default `Admin@12345` — **must be changed** |
+| `BOOTSTRAP_ADMIN_PASSWORD` | **YES before first bootstrap** | No default password exists — bootstrap fails unless this Script Property is set. Set a strong value, bootstrap, then remove the property. |
 
 OAuth scopes in `appsscript.json`: spreadsheets, external_request, script.scriptapp.
 If the workbooks live in a Shared Drive, add
@@ -201,8 +203,9 @@ Operational workbook (existing, do **not** create/rename):
       `tbl_departments`, `tbl_branches`, `tbl_locations`, or customer history sheets.
 - [ ] Protected sheets: `tbl_audit_logs`, `idx_tracking`, `idx_id_map`, `tbl_sequences`.
 - [ ] Default roles/permissions seeded; `admin` user present.
-- [ ] Change the default admin password in `tbl_users` (or set
-      `BOOTSTRAP_ADMIN_PASSWORD` **before** first bootstrap, then remove it).
+- [ ] Set a strong `BOOTSTRAP_ADMIN_PASSWORD` **before** first bootstrap, then
+      remove it. There is no default admin password; bootstrap refuses to run
+      without this property.
 - [ ] Populate `tbl_user_scopes` for BRANCH_MANAGER/TREASURY/COLLECTOR users —
       no scopes are seeded, so unscoped users currently see all records.
 - [ ] Install the daily alert-scan trigger (§7).
@@ -354,20 +357,23 @@ Expected (counts vary on re-run):
 | Scope on get | Scoped manager fetches a document in another Warehouse Group | `403 FORBIDDEN` (fixed) |
 | Scope on list | Scoped manager lists documents → only own Warehouse Group | Filtered by `warehouse` |
 | Scope assignment | Users with no `tbl_user_scopes` rows | See all data — **populate scopes** |
+| Collector holder scope | Collector reads another collector's row / forges `collector_id` on create | `403 FORBIDDEN` / edge forces the caller's identity (security rollout) |
+| MFA challenge handling | `/auth/mfa/*` with an expired `cms-mfa` token | `401` after 5 min; challenge sent as `Bearer` (security rollout) |
 | Customer master read-only | POST/PUT `/customers` | `404` (routes removed) |
 | Bootstrap protection | POST bootstrap without token | `401 UNAUTHORIZED` |
 | Audit log | Any mutation | Row appended to `tbl_audit_logs` |
-| Default admin password | Try `Admin@12345` | **Must fail** — change before prod |
+| Default admin password | Try `Admin@12345` | **Must fail** — no default exists; bootstrap requires `BOOTSTRAP_ADMIN_PASSWORD` |
 | CORS | Wildcard `Access-Control-Allow-Origin` | Acceptable: auth header required; frontend uses `same-origin` |
 | Password KDF | Custom PBKDF2-HMAC-SHA256, 2000 iterations | Works, but below modern guidance — plan upgrade |
-| Token revocation | Phase 1: 8h lifetime, rotate keys to revoke globally. Phase 2 (pending deploy): 15m access token + refresh/session revocation | Verify `TOKEN_REVOKED`, `REFRESH_INVALID`, `REFRESH_REUSE` after Phase 2 deploy |
+| Token revocation | Phase 2 (live): 15 min access token + refresh/session revocation; logout invalidates tokens issued in the same second | `TOKEN_REVOKED`, `REFRESH_INVALID`, `REFRESH_REUSE` verified in staging |
 
 ### Residual risks / follow-ups (not Phase 1 blockers)
 
 - Consider raising PBKDF2 iterations and migrating to a standard library KDF.
 - Consider restricting CORS `Allow-Origin` to the Pages domain.
-- Consider adding scope checks to mutation service actions (currently enforced
-  mainly on list/get paths).
+- Scope checks are now enforced on detail reads, subresources and mutations of
+  `collections`, `books`, `receipts`, `batches` and `deposits`; remaining review
+  areas are tracking/movement scope and dashboard/report aggregations.
 - Generate `package-lock.json` via `npm install` and commit it for reproducible CI.
 
 ---
@@ -381,17 +387,18 @@ Expected (counts vary on re-run):
 | Cloudflare Pages project | `collections-management` |
 | API base | `https://collections-management.pages.dev/api/v1` |
 | Health | `https://collections-management.pages.dev/api/health` → 200 |
-| Apps Script Web App (production) | deployment `@17`, `AKfycbxythKpR19EZt2deIdK4r6aahN__hRy19-CezsY5ukmcmr1gRWe8cQne2jee3LDExc` |
+| Apps Script Web App (production) | deployment `@25` (was `@17`, then `@24`), `AKfycbxythKpR19EZt2deIdK4r6aahN__hRy19-CezsY5ukmcmr1gRWe8cQne2jee3LDExc` — ID/URL unchanged |
 | Web App access | **Anyone** (`أي شخص`), execute as Me — set from the Apps Script UI |
 | Operational workbook | `12GyVXdmKlIZUy6evNhQK2IKJjZ8olWtEn6WxuPSunLI` |
 | Customer master workbook | `1U5mxsJIKZ_eVMlEgSZQBuBNJUEH7zX4Z`, sheet `قاعده عملاء الشركه` (5,914 rows, read live) |
 | Production KV | `fb65d7933b724884a1740133c824b026` |
 | CI | GitHub Actions auto-deploy on push to `main` (workflow `deploy.yml`) |
 
-> Do **not** run `clasp deploy` against `@17`: it can reset Web App access to
-> login-only. Create a new deployment from the Apps Script UI with access
-> `أي شخص` if a new Apps Script version must go live, then update the
-> `GAS_URL` GitHub Secret and rerun the deploy workflow.
+> Web App access must remain `أي شخص` = `ANYONE_ANONYMOUS` (never `ANYONE`).
+> The 2026-11-19 and 2026-11-21 rollouts used `clasp deploy -i <existing
+> deployment ID>` to redeploy **in place**, which keeps the ID and `GAS_URL`
+> stable. Verify `webapp.access` via the Apps Script API after any deployment;
+> if it changed, fix it from the UI before proceeding.
 
 ### Bootstrap / auth
 
@@ -440,8 +447,9 @@ Expected (counts vary on re-run):
   (`customer:{Account}`).
 - **Temporary Apps Script deployments archived.** All temporary active
   deployments (`@9`, `@10`, `@12`, `@13`, `@15`, plus related untitled ones)
-  were archived. Only deployment `@17` remains active, with public access
-  `أي شخص`; its ID and URL are unchanged. No new `clasp deploy` was run.
+  were archived. only `@17` remained active at that time, with public access
+  `أي شخص`; It was later superseded in place by `@24` (2026-11-19) and `@25`
+   (2026-11-21) on the same deployment ID/URL — see §14.6–14.7.
 - Mutation flows (create/transition/audit-log insertion) were intentionally
   **not** run against production, to avoid writing test records into the live
   business workbook. If required later, run them in a sandbox copy or with
@@ -454,16 +462,18 @@ Expected (counts vary on re-run):
 
 ---
 
-## 14. Phase 2 — configuration, migration & operations (pending approval)
+## 14. Phase 2 — configuration, migration & operations (live)
 
-Nothing in this section is live. Phase 2 code is committed to the local working
-tree only. **Do not** run `clasp push --force`, `clasp deploy`, or a Pages
-production deploy until the user explicitly approves it.
+Phase 2 was explicitly approved and deployed to production on 2026-11-19; the
+security hardening pass was approved and deployed on 2026-11-21 (§14.6). This
+section is the operational runbook for the live configuration.
 
-When the Apps Script push is approved, run `clasp` **from `apps-script/`** so the
-complete `apps-script/.clasp.json` push order is used (it includes
-`services/backup-service.gs` and all Phase 2 services/migrations). The older
-root `.clasp.json` has only the Phase 1 push order.
+Run `clasp` **from `apps-script/`** so the complete `apps-script/.clasp.json`
+push order is used (it includes `services/backup-service.gs` and all Phase 2
+services/migrations). The older root `.clasp.json` has only the Phase 1 push
+order. For a code change, push with `clasp push --force` and redeploy **in
+place** with `clasp deploy -i <existing deployment ID>` to keep `GAS_URL`
+stable; re-verify Web App access `أي شخص` = `ANYONE_ANONYMOUS` afterwards.
 
 ### 14.1 Additional configuration — Google Sheets only
 
@@ -543,7 +553,7 @@ as the production backup procedure.
 
 ### 14.6 Final rollout evidence (2026-11-19)
 
-- `npm test`: **19 files / 137 tests, 0 failures**.
+- `npm test`: **19 files / 137 tests, 0 failures** (at that rollout; current baseline is 20 files / 148 tests after the security pass).
 - Syntax checks: clean for all changed `.js`/`.gs` files.
 - Apps Script: pushed and deployed as Web App **@24** on the original URL;
   `webapp.access = ANYONE_ANONYMOUS` (أي شخص) verified via the Apps Script API.
@@ -561,3 +571,52 @@ as the production backup procedure.
 - Audit: `GET /audit/verify` returned `valid: true`, `recordsChecked: 31`.
 - Feature flags remain off by default: `auth.mfa.enforce`, `approvals.enabled`
   and `registry.splitEnabled` (split needs both registry flags).
+
+### 14.7 Security hardening rollout (2026-11-21) — verified
+
+Staging-validated fixes promoted to production after explicit approval.
+
+- Commit `f08b537` (`fix(security): harden scope checks, admin projection and
+  MFA challenge handling`) on `main`; GitHub Actions run `44892295333`
+  `success` (jobs `test`, `deploy`), 7 secrets uploaded, 22 files.
+- Cloudflare Pages deployment `64e25b99.collections-management.pages.dev`
+  (stable URL `https://collections-management.pages.dev/`); both
+  `/api/v1/health` = 200.
+- Apps Script: `clasp push --force` (49 files) then in-place redeploy of the
+  existing deployment ID to **@25** (`...LDExc`); `GAS_URL` unchanged; Web App
+  health = 200 and access remains `أي شخص` = `ANYONE_ANONYMOUS`.
+- Fixes shipped: `/admin/users` public-field projection (no
+  `password_hash`/`mfa_secret`/`recovery_hashes`); MFA `cms-mfa` challenge TTL
+  reduced to 5 min and sent as `Bearer`; same-second revocation; removal of the
+  default `Admin@12345` (bootstrap now requires `BOOTSTRAP_ADMIN_PASSWORD`);
+  collector holder-scope denial + forged `collector_id` override; scope guards
+  on detail reads/subresources/mutations of `collections`, `books`, `receipts`,
+  `batches`, `deposits`; malformed URI path params → 400.
+- `npm test`: **20 files / 148 tests, 0 failures**.
+- Post-deploy production: Phase 1 smoke **11/11**, Phase 2 smoke **11/11**,
+  security check PASS (1 admin/user row, 0 leaking rows; all three flags off).
+  Rollout complete, no regressions.
+
+---
+
+## 15. Staging environment (isolated)
+
+A fully isolated staging stack was created on 2026-11-21; production was not
+modified for staging setup.
+
+- Google Apps Script: separate standalone project
+  `1bttjabf1xElXr4g84YvafJLnnxqpz7lfwkKTFADi8rx08uLa3E7hC5LH`, Web App
+  access `أي شخص` = `ANYONE_ANONYMOUS`; source in a temp dir, never committed.
+- Google Sheets: separate workbook `17vvo2LxggHoE1feqW8jdsypV0euiv06h3kWdQ58yQuk`
+  (copied from production), with `sheet_registry`/`workbook_registry` repointed
+  to the staging workbook; `registry.splitEnabled = false`.
+- Cloudflare Pages: separate project `collections-management-staging`,
+  `https://collections-management-staging.pages.dev/`; separate KV namespace
+  `e8afea19e36d4b26b6d72ca28273bbfd`.
+- Secrets: separate JWT keypair (`cms-api-staging`/`cms-web-staging`),
+  `BOOTSTRAP_TOKEN`, `GAS_SHARED_SECRET`, `GAS_URL`; 7 staging-only secrets.
+- No R2 buckets, bindings, secrets or triggers in staging or production.
+- Staging verification: Web App health 200, API smoke **22/22**, write smoke
+  created/read `STG-SMOKE-001`, security check PASS, scope E2E **3/3** with a
+  locally minted COLLECTOR JWT (collector → `/admin/users` 403, foreign
+  collection detail 403, forged `collector_id` forced to caller).

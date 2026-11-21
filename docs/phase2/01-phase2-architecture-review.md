@@ -1,6 +1,6 @@
 # Phase 2 Architecture Review
 
-**Status:** Design approved; Steps 1-12 implemented and validated locally. Production migration and deployment pending explicit approval.
+**Status:** Steps 1-12 (except skipped R2 Steps 6/12) are **live in production** — Phase 2 shipped 2026-11-19, security hardening 2026-11-21 (`f08b537`). Migrations M001-M011 applied and verified; smoke 11/11 + 11/11.
 **Rollout update:** R2 is skipped. Google Sheets is the only storage backend; Steps 6 and 12 are dormant reference code and their R2 instructions below are not part of the active rollout.
 **Scope:** Upgrade the live Phase 1 system at `https://collections-management.pages.dev/` into a production-grade financial control platform **on top of** the existing implementation, with zero redesign and zero rebuilding of Phase 1.
 

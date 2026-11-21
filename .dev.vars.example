@@ -23,7 +23,7 @@ BOOTSTRAP_TOKEN=replace-with-another-long-random-secret
 #   CUSTOMER_MASTER_SPREADSHEET_ID    = ID of the customer master spreadsheet
 #   CUSTOMER_MASTER_SHEET_NAME        = قاعده عملاء الشركه  (optional, this is the default)
 #   SPREADSHEET_ID                    = operational workbook ID (optional, has a default)
-#   BOOTSTRAP_ADMIN_PASSWORD          = strong admin password (MUST be changed in production)
+#   BOOTSTRAP_ADMIN_PASSWORD          = REQUIRED before first bootstrap; no default password exists
 #
 # Install only the Phase 1 daily alert trigger once from Apps Script:
 #   installDailyScanTrigger()   -> 01:00 UTC

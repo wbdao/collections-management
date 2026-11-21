@@ -1,6 +1,6 @@
 # Phase 2 — Database Migrations (Design)
 
-**Status:** Approved. Executable, idempotent M001-M011 scripts are in `apps-script/migrations/`; production application pending approval.
+**Status:** Executable, idempotent M001-M011 scripts in `apps-script/migrations/` were **applied and verified in production** on 2026-11-19 (`allValid: true`, `failed: []`, `pending: []`).
 
 > **Rollout update:** R2 is skipped. M005 and M009 still create additive sheet
 > schemas for reference, but no R2 object is written and no backup lifecycle is

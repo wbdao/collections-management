@@ -1,6 +1,6 @@
 # Phase 2 — API Changes (Design)
 
-**Status:** Approved; all Phase 2 endpoints implemented locally. Production deployment pending approval. See `docs/api/openapi.yaml` for the active route reference.
+**Status:** All Phase 2 endpoints (except skipped R2 attachment/backup routes) are **live in production**. See `docs/api/openapi.yaml` for the active route reference.
 
 > **Rollout update:** R2 is skipped. The attachment and backup endpoint tables
 > below are design history only; those routes are **not mounted** and are absent

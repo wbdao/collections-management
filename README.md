@@ -1,6 +1,6 @@
 # Collections Management System — Phase 1 + Phase 2
 
-Production Phase 1 system (live) plus the locally implemented, pending-deployment Phase 2 hardening/extension.
+Production Phase 1 + Phase 2 system (live and verified). Phase 2 shipped on 2026-11-19; high-severity security hardening followed on 2026-11-21 (commit `f08b537`).
 
 ```text
 Frontend → Cloudflare Functions → Repository Interface → Apps Script Adapter → Google Sheets
@@ -38,12 +38,12 @@ This architecture is unchanged. Business services never access `SpreadsheetApp`;
 - Movements for BOOK/RECEIPT/CHEQUE/GUARANTEE, universal tracking
 - Append-only audit, single operational spreadsheet (`sheet_registry` in `tbl_settings`)
 
-## Phase 2 scope (implemented locally; deployment pending)
+## Phase 2 scope (live in production; R2 features skipped)
 
 > **Storage decision:** R2 is skipped. Google Sheets is the primary and only
 > production store. Steps 6 and 12 are implemented locally as dormant reference
 > code, but their API routes, buckets, secrets and daily backup trigger are not
-> part of this rollout. Only Phase 1 storage behaviour is deployed.
+> part of this rollout. Google Sheets is the only production store.
 
 | # | Feature | Flag / default | Notes |
 |---|---|---|---|
@@ -93,6 +93,6 @@ Customer master columns are resolved by header text at read time: `Account`, `Na
 
 ## Tests
 
-`npm test` — 19 files / 137 tests: repository contract (Sheets + mock D1), schemas, constants, scope, hash chain, sessions/JWT, MFA, treasury, notifications, approvals, reporting, workbook registry, D1 adapter, rate limiting/security and lockout. Attachment and backup suites remain as dormant reference tests; neither feature is deployed.
+`npm test` — 20 files / 148 tests: repository contract (Sheets + mock D1), schemas, constants, scope (incl. `getInScope`/`guardScope`/`scopeForCreate`), hash chain, sessions/JWT, MFA, treasury, notifications, approvals, reporting, workbook registry, D1 adapter, rate limiting/security, lockout and security-hardening regressions. Attachment and backup suites remain as dormant reference tests; neither feature is deployed.
 
-Phase 1 production smoke baseline: all 11 checks green (`health`, login, `auth/me`, three dashboard endpoints, customer autocomplete/search/lookup, and both 404 cases). It verifies the live Phase 1 API only — Phase 2 code is not deployed.
+Production smoke baselines (post-deploy, 2026-11-21): Phase 1 **11/11** (`health`, login, `auth/me`, three dashboard endpoints, customer autocomplete/search/lookup, and both 404 cases) and Phase 2 **11/11** (sessions, reports, notifications, treasuries, approvals, audit, security, registry). Production security check: `/admin/users` projects only public fields (no `password_hash`/`mfa_secret`/`recovery_hashes`) and the flags `auth.mfa.enforce`, `approvals.enabled`, `registry.splitEnabled` remain off. Staging is a fully isolated separate spreadsheet, Apps Script project, Pages project, JWT keys and KV (see `DEPLOYMENT.md` §15); no R2 buckets/bindings/secrets exist in either environment.

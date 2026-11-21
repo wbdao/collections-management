@@ -213,7 +213,7 @@ curl -X POST "https://collections-management.pages.dev/api/v1/admin/bootstrap" `
 | `CUSTOMER_MASTER_SPREADSHEET_ID` | معرّف ملف عملاء الشركه |
 | `CUSTOMER_MASTER_SHEET_NAME` | `قاعده عملاء الشركه` (اختياري) |
 | `SPREADSHEET_ID` | `12GyVXdmKlIZUy6evNhQK2IKJjZ8olWtEn6WxuPSunLI` (اختياري) |
-| `BOOTSTRAP_ADMIN_PASSWORD` | كلمة مرور قوية (بدلاً من `Admin@12345`) |
+| `BOOTSTRAP_ADMIN_PASSWORD` | **إلزامية قبل أول بوتستراب**؛ لا توجد كلمة مرور افتراضية الآن (لم يعد `Admin@12345` موجوداً). تُحذف بعد البوتستراب. |
 
 خصائص النسخ الاحتياطي (`BACKUP_EDGE_URL`، `BACKUP_SERVICE_TOKEN`) غير مطلوبة لأن R2 ملغى.
 

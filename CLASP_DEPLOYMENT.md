@@ -83,7 +83,7 @@ Authoritative file: `apps-script/appsscript.json`
   "runtimeVersion": "V8",
   "webapp": {
     "executeAs": "USER_DEPLOYING",
-    "access": "ANYONE"
+    "access": "ANYONE_ANONYMOUS"
   },
   "oauthScopes": [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -99,7 +99,7 @@ Why these settings:
 |---|---|
 | `runtimeVersion: V8` | Code uses modern JS (`const`, arrow functions, `Object.freeze`) |
 | `executeAs: USER_DEPLOYING` | Script runs as you, so it can reach both spreadsheets |
-| `access: ANYONE` | Cloudflare Functions must be able to call the Web App; every request is HMAC-signed |
+| `access: ANYONE_ANONYMOUS` | "Anyone" (`أي شخص`) — Cloudflare Functions must call the Web App unauthenticated; every request is HMAC-signed. **Never** use `ANYONE` (that requires a Google account and breaks the edge). |
 | `spreadsheets` | `SpreadsheetApp.openById()` for the operational + customer master workbooks |
 | `script.external_request` | `UrlFetchApp`, used by `Code.gs`/auth helpers |
 | `script.scriptapp` | `installDailyScanTrigger()` / `ScriptApp` |
@@ -270,14 +270,18 @@ clasp list-deployments
 Older clasp versions: `clasp deploy --description "Phase 1 initial release"`.
 
 Copy the resulting `/exec` URL into the Cloudflare Pages secret `GAS_URL`.
-Every code change afterwards needs:
+Every code change afterwards must redeploy **in place** on the existing
+deployment ID so the URL and `GAS_URL` stay stable — do **not** create a new
+deployment (that changes `/exec` and would break the edge):
 
 ```powershell
 clasp push --force
-clasp create-deployment --description "Phase 1 update"
+clasp deploy -i <existing deployment ID> -d "update"
 ```
 
-(The `/exec` URL stays the same for subsequent versions.)
+Then re-verify Web App access is `أي شخص` = `ANYONE_ANONYMOUS` (never `ANYONE`)
+via the Apps Script API. The current production deployment ID is
+`AKfycbxythKpR19EZt2deIdK4r6aahN__hRy19-CezsY5ukmcmr1gRWe8cQne2jee3LDExc`.
 
 ### 2.x -> 3.x command mapping
 

@@ -1,6 +1,6 @@
 # Phase 2 — ERD Changes (Canonical)
 
-**Status:** Implemented locally (Steps 1–12); pending production migration/deployment. The repo had **no formal ERD** in Phase 1; the effective Phase 1 data model is `apps-script/data/tables.gs`. This document is the canonical additive Phase 2 ERD and mirrors the shipped `TABLES` definitions exactly.
+**Status:** **Deployed** (Steps 1-12 minus skipped R2 Steps 6/12). The repo had **no formal ERD** in Phase 1; the effective Phase 1 data model is `apps-script/data/tables.gs`. This document is the canonical additive Phase 2 ERD and mirrors the shipped `TABLES` definitions exactly.
 
 > **Rollout update:** R2 is skipped. `tbl_attachments` / `tbl_backups` remain in
 > the additive schema, but their R2 objects, checkpoints and backup trigger are
