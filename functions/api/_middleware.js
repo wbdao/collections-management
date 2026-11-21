@@ -8,8 +8,8 @@ import { optionsResponse, failure } from '../_lib/respond.js';
 import { normalizeError } from '../_lib/errors.js';
 import { resolveIdempotencyKey } from '../_lib/idempotency.js';
 import {
-  enforceRateLimit, enforceLoginLimit, enforcePerIpLimit, enforceBootstrapLimit,
-  enforceAuthUserLimit, enforceMfaLimit, recordRateLimitEvent
+  enforceLoginLimit, enforceBootstrapLimit, enforceAuthUserLimit,
+  enforceMfaLimit, recordRateLimitEvent
 } from '../_lib/ratelimit.js';
 
 // PHASE 2 / Step 2: refresh is public (the access token has expired by then)
@@ -59,10 +59,9 @@ export async function onRequest(context) {
   try {
     const path = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
 
-    // PHASE 2 / Step 11: independent per-IP layer for every path. KV failure
-    // degrades open, so this never blocks legitimate traffic on its own.
-    await enforcePerIpLimit(env, ctx);
-
+    // Cloudflare-limit mitigation: there is intentionally NO KV write on every
+    // request. KV's free tier allows only 1,000 writes/day, so limits are
+    // reserved for the low-volume login/refresh/MFA/bootstrap paths below.
     if (PUBLIC_PATHS.has(path)) {
       ctx.actor = { userId: 'anonymous', username: 'anonymous', role: 'PUBLIC', scopes: [], permissions: [] };
       await enforceLoginLimit(env, ctx);
@@ -115,7 +114,8 @@ export async function onRequest(context) {
       return failure(403, 'CSRF_REJECTED', 'Cross-site mutation rejected', [], requestId);
     }
 
-    await enforceRateLimit(env, ctx, 'api', 120, 60);
+    // No blanket per-API KV counter here — public API traffic is bounded by
+    // Cloudflare's request quota (and custom-domain WAF if enabled), not KV.
     context.data.cms = ctx;
     return next();
   } catch (error) {

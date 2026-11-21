@@ -134,7 +134,7 @@ test('recordRateLimitEvent degrades silently when GAS/KV is unavailable', async 
   }
 });
 
-test('middleware offloads RATE_LIMITED event writing and still returns 429', async () => {
+test('middleware offloads RATE_LIMITED event writing and still returns 429 on login', async () => {
   const writes = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (_url, options) => {
@@ -145,10 +145,11 @@ test('middleware offloads RATE_LIMITED event writing and still returns 429', asy
   try {
     const { env } = kvEnv((_e, kv) => {
       const originalGet = kv.get;
-      kv.get = async (key) => (key.startsWith('rl:ip:') ? '999' : originalGet(key));
+      kv.get = async (key) => (key.startsWith('rl:login:') ? '999' : originalGet(key));
     });
     const pending = [];
-    const request = new Request('https://example.com/api/v1/customers/search', {
+    const request = new Request('https://example.com/api/v1/auth/login', {
+      method: 'POST',
       headers: { 'CF-Connecting-IP': '203.0.113.99' }
     });
     const response = await middleware({

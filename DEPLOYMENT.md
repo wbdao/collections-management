@@ -525,7 +525,7 @@ explicitly enabled. Workbook split activates only when both
 | MFA enrol | `POST /auth/mfa/enroll`, `verify` | TOTP (SHA256) or Email OTP accepted; `cms-mfa` challenge token only works on `/auth/mfa/*` |
 | Audit integrity | `GET /audit/verify`, `/audit/chain/status` | `{valid:true}`; tampering writes `AUDIT_VERIFY_FAILED` + `tbl_security_events` and an appended `FAILURE` audit row |
 | Lockout | 5 bad passwords | `ACCOUNT_LOCKED` event, 30-minute `users.locked_until`; ADMIN `POST /admin/security/unlock` clears it |
-| Rate limits | Flood an IP / user / MFA | `429 RATE_LIMITED` + one deduped `RATE_LIMITED` security event per minute; logging never recurses into the limiter |
+| Rate limits | Flood an IP / user / MFA on auth/bootstrap paths | `429 RATE_LIMITED` + one deduped `RATE_LIMITED` security event per minute; normal `/api/*` traffic has no KV counter; KV failures degrade open |
 | Security views | `GET /security/events`, `/security/me` | ADMIN/AUDITOR see the log (scoped roles need explicit scopes); any user sees their own posture |
 | R2 routes | `GET /attachments`, `GET/POST /admin/backups` | `404 NOT_FOUND` — intentionally unmounted; no bucket or trigger is used |
 | Approvals | gated mutations (while flag off) | No behaviour change; with flag on, one open request per entity/action, 24 h expiry, no self-approval |
@@ -553,7 +553,7 @@ as the production backup procedure.
 
 ### 14.6 Final rollout evidence (2026-11-19)
 
-- `npm test`: **19 files / 137 tests, 0 failures** (at that rollout; current baseline is 20 files / 148 tests after the security pass).
+- `npm test`: **19 files / 137 tests, 0 failures** (at that rollout; current baseline is 20 files / 152 tests after the security and Cloudflare-limit passes).
 - Syntax checks: clean for all changed `.js`/`.gs` files.
 - Apps Script: pushed and deployed as Web App **@24** on the original URL;
   `webapp.access = ANYONE_ANONYMOUS` (أي شخص) verified via the Apps Script API.
@@ -597,6 +597,35 @@ Staging-validated fixes promoted to production after explicit approval.
   security check PASS (1 admin/user row, 0 leaking rows; all three flags off).
   Rollout complete, no regressions.
 
+### 14.8 Cloudflare free-tier mitigation (2026-11-21) — staging-validated
+
+Production has **not** been changed by this pass; promotion requires explicit
+approval after the staging evidence below.
+
+- `npm test`: **20 files / 152 tests, 0 failures**. New regressions cover the
+  workflow path filter, the fail-open KV behaviour, preserved `429` behaviour,
+  and the absence of blanket per-request KV counters in the middleware.
+- `.github/workflows/deploy.yml`: `push`/`pull_request` are filtered to
+  `functions/**`, `frontend/**`, `shared/**`, `wrangler.toml` and
+  `package*.json`; `workflow_dispatch` is retained. Documentation-only commits
+  no longer consume the 500 Pages builds/month quota.
+- `functions/api/_middleware.js`: removed `enforcePerIpLimit()` and
+  `enforceRateLimit('api', 120, 60)`. Normal `/api/*` traffic no longer writes
+  KV. Limits remain on `login` / `refresh` / MFA / `bootstrap` only.
+- `functions/_lib/ratelimit.js`: `get` and `put` are individually wrapped so a
+  KV quota/read/write failure degrades open instead of producing a 5xx. A real
+  counter breach still throws `RATE_LIMITED` with status 429.
+- No Cloudflare WAF rule was created. `*.pages.dev` is not a customer-owned
+  zone, so WAF rules cannot target the current production hostname. A future
+  proxied custom domain can use the one free WAF rule for `/api/*` by IP.
+- Staging deployment: `7e77ea4a.collections-management-staging.pages.dev`
+  (stable `https://collections-management-staging.pages.dev/` = 200).
+- Staging verification after deploy: smoke **22/22**, security check PASS
+  (1 user row, 0 leaking rows; all three flags off), scope E2E **3/3**.
+- Design capacity: with ~1,000 collection rows/day (~3,000–5,000 API calls),
+  normal API traffic consumes **0 KV writes/day** and remains far below the
+  100,000 Workers requests/day quota.
+
 ---
 
 ## 15. Staging environment (isolated)
@@ -620,3 +649,6 @@ modified for staging setup.
   created/read `STG-SMOKE-001`, security check PASS, scope E2E **3/3** with a
   locally minted COLLECTOR JWT (collector → `/admin/users` 403, foreign
   collection detail 403, forged `collector_id` forced to caller).
+- Cloudflare-limit mitigation re-verified on staging after deployment
+  `7e77ea4a`: smoke **22/22**, security check PASS, scope E2E **3/3**,
+  stable URL `/api/v1/health` = 200 (see §14.8).

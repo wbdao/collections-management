@@ -23,7 +23,7 @@
 | 11 | Rate Limiting & Lockout | `tests/rate-limit-security.test.js`, `tests/security-hardening.test.js` |
 | 12 | Backup & Recovery | `tests/backups.test.js` |
 
-Current baseline: **20 test files / 148 tests, 0 failures** (`npm test`); all syntax checks clean; production smoke Phase 1 11/11 + Phase 2 11/11.
+Current baseline: **20 test files / 152 tests, 0 failures** (`npm test`); all syntax checks clean; production smoke Phase 1 11/11 + Phase 2 11/11.
 
 ---
 
@@ -33,7 +33,7 @@ Every step must satisfy all of the following before the next begins:
 
 - [x] Its migration(s) from deliverable 2 are written and idempotent (`apps-script/migrations/M001`–`M011`); **production `migration.verify()` passed (`allValid: true`)**.
 - [x] Feature flag (where defined) exists in `tbl_settings` definitions with the documented default; **production flag rows present, sensitive flags off**.
-- [x] New tests added; `npm test` green — 20 files / 148 tests, 0 failures (Phase 1 baseline was 5 files / 13 tests).
+- [x] New tests added; `npm test` green — 20 files / 152 tests, 0 failures (Phase 1 baseline was 5 files / 13 tests).
 - [x] Production smoke green: Phase 1 11/11 (`health`, `auth/me`, dashboard, customers, tracking, 404s) and Phase 2 11/11 (sessions, reports, notifications, treasuries, approvals, audit, security, registry).
 - [x] Apps Script `clasp push --force` clean; redeployed in place to `@25` (ID/URL unchanged); public access `أي شخص` = `ANYONE_ANONYMOUS` verified.
 - [x] Docs updated: `README.md`, `DEPLOYMENT.md`, `CLOUDFLARE_SETUP.md`, API spec (`docs/api/openapi.yaml`), ERD (`docs/phase2/03-erd-changes.md`), `.dev.vars.example`, `wrangler.toml`.

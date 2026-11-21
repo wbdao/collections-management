@@ -3,8 +3,20 @@ name: Test and deploy to Cloudflare Pages
 on:
   push:
     branches: [main]
+    paths:
+      - 'functions/**'
+      - 'frontend/**'
+      - 'shared/**'
+      - 'wrangler.toml'
+      - 'package*.json'
   pull_request:
     branches: [main]
+    paths:
+      - 'functions/**'
+      - 'frontend/**'
+      - 'shared/**'
+      - 'wrangler.toml'
+      - 'package*.json'
   workflow_dispatch:
 
 concurrency:

@@ -69,6 +69,66 @@ test('rate limiting degrades open when KV is unavailable', async () => {
   await enforceRateLimit({}, { actor: { userId: 'USR1' } }, 'api', 0, 60);
 });
 
+test('rate limiting still returns 429 when the counter is exhausted', async () => {
+  const kv = {
+    getCalls: 0,
+    puts: 0,
+    async get() { kv.getCalls += 1; return '10'; },
+    async put() { kv.puts += 1; }
+  };
+  await assert.rejects(
+    () => enforceRateLimit({ KV: kv }, { actor: { userId: 'USR1' }, ip: '1.2.3.4' }, 'login', 10, 60),
+    (error) => error.code === 'RATE_LIMITED'
+      && error.status === 429
+      && error.bucket === 'login'
+      && error.details?.[0]?.retryAfter === 60
+  );
+  assert.equal(kv.getCalls, 1);
+  assert.equal(kv.puts, 0);
+});
+
+test('rate limiting degrades open when KV get or put fails', async () => {
+  const failingGet = {
+    async get() { throw new Error('KV read quota exceeded'); },
+    async put() { throw new Error('should not be reached'); }
+  };
+  await assert.doesNotReject(() => enforceRateLimit(
+    { KV: failingGet }, { actor: { userId: 'USR1' } }, 'login', 0, 60
+  ));
+
+  const failingPut = {
+    async get() { return '0'; },
+    async put() { throw new Error('KV write quota exceeded'); }
+  };
+  await assert.doesNotReject(() => enforceRateLimit(
+    { KV: failingPut }, { actor: { userId: 'USR1' } }, 'login', 10, 60
+  ));
+});
+
+test('general API paths do not write blanket KV rate-limit counters', () => {
+  const middleware = fs.readFileSync(
+    new URL('../functions/api/_middleware.js', import.meta.url), 'utf8'
+  );
+  assert.equal(middleware.includes('enforcePerIpLimit'), false);
+  assert.equal(middleware.includes("'api', 120"), false);
+  for (const fn of ['enforceLoginLimit', 'enforceBootstrapLimit',
+    'enforceAuthUserLimit', 'enforceMfaLimit']) {
+    assert.ok(middleware.includes(`${fn}(`), `missing ${fn} call in middleware`);
+  }
+});
+
+test('documentation-only commits do not trigger Pages deploys', () => {
+  const workflow = fs.readFileSync(
+    new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8'
+  );
+  assert.match(workflow, /push:\s*\n\s+branches: \[main\]\s*\n\s+paths:/);
+  for (const path of ["'functions/**'", "'frontend/**'", "'shared/**'",
+    "'wrangler.toml'", "'package*.json'"]) {
+    assert.ok(workflow.includes(path), `missing path filter ${path}`);
+  }
+  assert.match(workflow, /workflow_dispatch:/);
+});
+
 /* ---- Regressions for the post-staging security review --------------------- */
 
 test('admin user projection strips password hashes and MFA secrets', () => {

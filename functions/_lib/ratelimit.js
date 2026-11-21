@@ -6,7 +6,16 @@ export async function enforceRateLimit(env, ctx, bucket, limit, windowSeconds = 
   if (!env.KV) return;
   const actor = identity || ctx.actor?.userId || ctx.ip || 'anonymous';
   const key = `rl:${bucket}:${actor}:${Math.floor(Date.now() / 1000 / windowSeconds)}`;
-  const current = Number((await env.KV.get(key)) || 0) + 1;
+
+  let current;
+  try {
+    const raw = Number((await env.KV.get(key)) || 0);
+    current = (Number.isFinite(raw) ? raw : 0) + 1;
+  } catch (err) {
+    // KV read failure (including quota errors) must never become a 5xx.
+    return;
+  }
+
   if (current > limit) {
     throw Object.assign(new Error('Too many requests'), {
       code: 'RATE_LIMITED', status: 429,
@@ -14,8 +23,14 @@ export async function enforceRateLimit(env, ctx, bucket, limit, windowSeconds = 
       details: [{ retryAfter: windowSeconds }]
     });
   }
-  // KV expirationTtl floor is 60 seconds; never use a shorter TTL.
-  await env.KV.put(key, String(current), { expirationTtl: Math.max(60, windowSeconds + 5) });
+
+  try {
+    // KV expirationTtl floor is 60 seconds; never use a shorter TTL.
+    await env.KV.put(key, String(current), { expirationTtl: Math.max(60, windowSeconds + 5) });
+  } catch (err) {
+    // KV write quota/failure: degrade open instead of blocking legitimate traffic.
+    return;
+  }
 }
 
 /**
@@ -65,7 +80,12 @@ export async function enforceLoginLimit(env, ctx) {
 
 /* ---- PHASE 2 / Step 11 — layered limits ---------------------------------- */
 
-/** Per-IP layer applied to every non-OPTIONS request, including public paths. */
+/**
+ * Optional per-IP layer. Retained for opt-in use only — it is NOT applied to
+ * every API request because a KV write per request would exhaust the free-tier
+ * 1,000 writes/day quota. General API traffic is bounded by Cloudflare's
+ * request quota (and by a custom-domain WAF rule when one is configured).
+ */
 export async function enforcePerIpLimit(env, ctx) {
   const limit = Number(env.SECURITY_PER_IP_LIMIT) || 300;
   await enforceRateLimit(env, ctx, 'ip', limit, 60, ctx.ip || 'unknown');

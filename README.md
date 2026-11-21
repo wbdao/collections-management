@@ -57,7 +57,7 @@ This architecture is unchanged. Business services never access `SpreadsheetApp`;
 | 8 | Advanced reporting | — | Aging, collector performance, treasury reconciliation, audit exceptions, KPIs |
 | 9 | Workbook split support | `registry.splitEnabled` — **off** | CORE/DOCS/AUDIT via registry; activates only when `workbook_registry.enabled` is also true |
 | 10 | D1 adapter | `REPOSITORY_ADAPTER` — `sheets` | Reference implementation + contract tests; no binding, never selected |
-| 11 | Rate limiting & lockout | — | Layered KV limits, non-recursive security events, 5 failures → 30 min lock, ADMIN unlock |
+| 11 | Rate limiting & lockout | — | KV limits on auth/bootstrap paths only, fail-open on KV errors, non-recursive security events, 5 failures → 30 min lock, ADMIN unlock |
 | 12 | Backup & recovery | — | **DISABLED** — R2 skipped; GAS ledger code retained for reference, no route or daily trigger |
 
 New tables: `tbl_sessions`, `tbl_treasuries`, `tbl_attachments`, `tbl_notifications`, `tbl_approvals`, `tbl_security_events`, `tbl_backups`. All new columns on existing tables are appended at the end. See the [canonical ERD](docs/phase2/03-erd-changes.md).
@@ -89,10 +89,31 @@ Quick start:
 6. Call `POST /api/v1/admin/bootstrap` with `X-Bootstrap-Token`, then apply migrations M001–M011 via `migration.run`/`migration.verify`.
 7. Deploy: `npm run deploy`. Install only `dailyScanTrigger` (01:00 UTC). `dailyBackupTrigger` is disabled.
 
+### Cloudflare free-tier budget
+
+- `.github/workflows/deploy.yml` only runs on `functions/**`, `frontend/**`,
+  `shared/**`, `wrangler.toml` and `package*.json`. Documentation-only commits
+  do not consume the 500 Pages builds/month quota; `workflow_dispatch` remains
+  available for manual deploys.
+- `functions/api/_middleware.js` intentionally performs **no KV write on every
+  request**. The former blanket per-IP and `api` counters were removed because
+  KV allows only 1,000 writes/day. Limits now apply only to the low-volume
+  `login` / `refresh` / MFA / `bootstrap` paths.
+- `enforceRateLimit()` degrades open if a KV read or write fails, so quota
+  errors can never turn a valid request into a 5xx. A genuine limit breach
+  still returns `429 RATE_LIMITED` and records one deduplicated security event.
+- Capacity note: ~1,000 collection rows/day (roughly 3,000–5,000 API calls)
+  now consumes **zero KV writes on normal API traffic** and stays far below
+  the 100,000 Workers requests/day quota.
+- No WAF rate-limiting rule is configured: `*.pages.dev` is not a
+  customer-owned Cloudflare zone. If a custom domain is proxied through
+  Cloudflare later, one free WAF rule can cap `/api/*` by IP with a 10-second
+  window without touching KV.
+
 Customer master columns are resolved by header text at read time: `Account`, `Name`, `Warehouse Group`, `Customer group`, `Eligible credit limit`, `Credit limit`, `Balance`, `Payment schedule`, `Worker`, `Worker Name`, `Company chain`, `Segment`, `ID number`, `Telephone`, `Account status`, `الاسم الموحد`.
 
 ## Tests
 
-`npm test` — 20 files / 148 tests: repository contract (Sheets + mock D1), schemas, constants, scope (incl. `getInScope`/`guardScope`/`scopeForCreate`), hash chain, sessions/JWT, MFA, treasury, notifications, approvals, reporting, workbook registry, D1 adapter, rate limiting/security, lockout and security-hardening regressions. Attachment and backup suites remain as dormant reference tests; neither feature is deployed.
+`npm test` — 20 files / 152 tests: repository contract (Sheets + mock D1), schemas, constants, scope (incl. `getInScope`/`guardScope`/`scopeForCreate`), hash chain, sessions/JWT, MFA, treasury, notifications, approvals, reporting, workbook registry, D1 adapter, rate limiting/security, lockout and security-hardening regressions. Attachment and backup suites remain as dormant reference tests; neither feature is deployed.
 
 Production smoke baselines (post-deploy, 2026-11-21): Phase 1 **11/11** (`health`, login, `auth/me`, three dashboard endpoints, customer autocomplete/search/lookup, and both 404 cases) and Phase 2 **11/11** (sessions, reports, notifications, treasuries, approvals, audit, security, registry). Production security check: `/admin/users` projects only public fields (no `password_hash`/`mfa_secret`/`recovery_hashes`) and the flags `auth.mfa.enforce`, `approvals.enabled`, `registry.splitEnabled` remain off. Staging is a fully isolated separate spreadsheet, Apps Script project, Pages project, JWT keys and KV (see `DEPLOYMENT.md` §15); no R2 buckets/bindings/secrets exist in either environment.
