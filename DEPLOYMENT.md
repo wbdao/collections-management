@@ -597,10 +597,10 @@ Staging-validated fixes promoted to production after explicit approval.
   security check PASS (1 admin/user row, 0 leaking rows; all three flags off).
   Rollout complete, no regressions.
 
-### 14.8 Cloudflare free-tier mitigation (2026-11-21) — staging-validated
+### 14.8 Cloudflare free-tier mitigation (2026-11-21) — production rollout complete
 
-Production has **not** been changed by this pass; promotion requires explicit
-approval after the staging evidence below.
+Staging-validated first, then promoted to production after explicit approval.
+No Apps Script/GAS redeployment was needed; only Pages runtime code changed.
 
 - `npm test`: **20 files / 152 tests, 0 failures**. New regressions cover the
   workflow path filter, the fail-open KV behaviour, preserved `429` behaviour,
@@ -625,6 +625,18 @@ approval after the staging evidence below.
 - Design capacity: with ~1,000 collection rows/day (~3,000–5,000 API calls),
   normal API traffic consumes **0 KV writes/day** and remains far below the
   100,000 Workers requests/day quota.
+- Production promotion: commit `62d7d9c` pushed to `main`; GitHub Actions run
+  `44900239755` = `success` (jobs `test` and `deploy`); Pages deployment
+  `https://16b23c1d.collections-management.pages.dev` built from `62d7d9c`.
+- Post-deploy production verification: stable URL and deployment URL
+  `/api/v1/health` both **200**; Phase 1 smoke **11/11**, Phase 2 smoke
+  **11/11**; security check PASS (1 user row, 0 leaking rows; all three flags
+  off); `GET /audit/verify` returned `valid: true`, `recordsChecked: 54`,
+  `issues: []`. No regressions; rollout complete.
+- The commit that added the workflow path filter was itself runtime-touching,
+  so it built normally. This documentation-only follow-up commit will **not**
+  trigger a Pages build, confirming the filter avoids wasting the monthly
+  build quota on docs.
 
 ---
 
