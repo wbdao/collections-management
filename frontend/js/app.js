@@ -10,6 +10,8 @@ import custody from './pages/custody.js';
 import tracking from './pages/tracking.js';
 import customers from './pages/customers.js';
 import approvals from './pages/approvals.js';
+import batches from './pages/batches.js';
+import books from './pages/books.js';
 import reports from './pages/reports.js';
 import { notFoundPage, forbiddenPage } from './pages/notfound.js';
 
@@ -39,8 +41,8 @@ defineRoutes([
   { path: '/tracking', page: tracking },
   { path: '/customers', page: customers },
   { path: '/approvals', page: approvals },
-  { path: '/batches', page: stubPage('Book Batches', 'Printing house batch lifecycle', 'batches.read') },
-  { path: '/books', page: stubPage('Books', 'Serial ranges and receipt generation', 'books.read') },
+  { path: '/batches', page: batches },
+  { path: '/books', page: books },
   { path: '/receipts', page: stubPage('Receipts', 'Collection receipt lifecycle', 'receipts.read') },
   { path: '/collections', page: stubPage('Collections', 'Collector collections', 'collections.read') },
   { path: '/deposits/branch', page: stubPage('Branch Deposits', 'Collected → deposited at branch', 'deposits.branch.read') },

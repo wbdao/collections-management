@@ -37,3 +37,20 @@ export const GUARANTEE_STATUSES = ['AT_BRANCH', 'AT_HQ', 'LEGAL_DEPARTMENT', 'RE
 export const DOCUMENT_TYPES = ['BOOK', 'RECEIPT', 'CHEQUE', 'GUARANTEE'];
 export const ALERT_TYPES = ['GUARANTEE_EXPIRY', 'CHEQUE_OVERDUE', 'CUSTODY_VARIANCE'];
 export const ALERT_BUCKETS = ['DUE_30', 'DUE_15', 'DUE_7', 'EXPIRED'];
+
+// Mirrors STATE_MACHINES in shared/constants/enums.js (browser cannot import
+// from shared/, so pages read these local copies). Transfer to/from a collector
+// is intentionally excluded here: books use the dedicated assign/return actions.
+export const BATCH_TRANSITIONS = Object.freeze({
+  EXPECTED: ['RECEIVED', 'QUARANTINED'],
+  RECEIVED: ['INSPECTED', 'QUARANTINED'],
+  INSPECTED: ['ACTIVE', 'QUARANTINED'],
+  QUARANTINED: ['ACTIVE', 'RETURNED_TO_SUPPLIER'],
+  ACTIVE: ['CLOSED'],
+  CLOSED: [], RETURNED_TO_SUPPLIER: []
+});
+export const BOOK_TRANSITIONS = Object.freeze({
+  AVAILABLE: ['CANCELLED', 'LOST'],
+  ASSIGNED: ['COMPLETED', 'CANCELLED', 'LOST'],
+  COMPLETED: [], CANCELLED: [], LOST: []
+});

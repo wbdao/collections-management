@@ -107,7 +107,16 @@ var BookService = (function () {
       notes: data.notes || ''
     });
 
-    var updated = SheetsAdapter.findRow('books', 'book_id', bookId);
+    // StateMachine only flips status for books; custody fields belong to this
+    // service. Patch after the guarded transition succeeds so a rejected
+    // transition can never leave a half-updated book, then refresh the tracking
+    // index with the corrected holder/location.
+    var updated = SheetsAdapter.updateRow('books', bookId, {
+      current_holder_id: data.assigned_to,
+      current_holder_type: 'COLLECTOR',
+      current_location: 'COLLECTOR'
+    });
+    TrackingService.upsertFromEntity('books', updated);
     CustodyService.record(ctx, {
       holderId: '', holderType: 'WAREHOUSE', documentType: 'BOOK', documentId: bookId,
       documentNumber: book.book_number, eventType: 'BOOK_ASSIGNED', direction: 'OUT',
@@ -169,6 +178,15 @@ var BookService = (function () {
       notes: data.notes || ''
     });
 
+    // Mirror assign(): the guarded transition only changes status, so this
+    // service clears custody back to the warehouse and refreshes tracking.
+    var returned = SheetsAdapter.updateRow('books', bookId, {
+      current_holder_id: '',
+      current_holder_type: 'WAREHOUSE',
+      current_location: 'WAREHOUSE'
+    });
+    TrackingService.upsertFromEntity('books', returned);
+
     CustodyService.record(ctx, {
       holderId: assignment.assigned_to, holderType: 'COLLECTOR', documentType: 'BOOK', documentId: bookId,
       documentNumber: book.book_number, eventType: 'BOOK_RETURNED', direction: 'OUT',
@@ -193,7 +211,7 @@ var BookService = (function () {
       newValue: { status: targetStatus, unusedReceipts: unused },
       result: 'SUCCESS'
     });
-    return { book: SheetsAdapter.findRow('books', 'book_id', bookId), unusedReceipts: unused, status: targetStatus };
+    return { book: returned, unusedReceipts: unused, status: targetStatus };
   }
 
   return { create: create, assign: assign, returnBook: returnBook };

@@ -120,6 +120,10 @@ var Router = (function () {
   }
 
   function doInsert(ctx, entity, data) {
+    // These services own their defaults, calculated fields and audit rows.
+    // Returning early avoids the generic insert + generic audit below (which
+    // would otherwise write a duplicate audit row and skip validation).
+    if (entity === 'book_batches') return BatchService.create(ctx, data);
     if (entity === 'books') return BookService.create(ctx, data);
     if (entity === 'cheques') return ChequeService.create(ctx, data);
     if (entity === 'guarantees') return GuaranteeService.create(ctx, data);
