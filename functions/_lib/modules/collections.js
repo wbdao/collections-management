@@ -2,7 +2,7 @@
 
 import { createRepository } from '../repository.js';
 import { requirePermission } from '../rbac.js';
-import { applyScope } from '../scope.js';
+import { applyScope, getInScope, guardScope, scopeForCreate } from '../scope.js';
 
 export async function list(env, ctx, query = {}) {
   requirePermission(ctx, 'collections.read');
@@ -13,23 +13,25 @@ export async function list(env, ctx, query = {}) {
 export async function get(env, ctx, id) {
   requirePermission(ctx, 'collections.read');
   const repo = createRepository(env, ctx);
-  return (await repo.get('collections', id)).data;
+  return getInScope(repo, ctx, 'collections', id);
 }
 
 export async function create(env, ctx, data) {
   requirePermission(ctx, 'collections.create');
   const repo = createRepository(env, ctx);
-  return (await repo.call('collection.create', 'collections', data)).data;
+  return (await repo.call('collection.create', 'collections', scopeForCreate(ctx, data))).data;
 }
 
 export async function update(env, ctx, id, patch, version) {
   requirePermission(ctx, 'collections.create');
   const repo = createRepository(env, ctx);
+  await guardScope(repo, ctx, 'collections', id);
   return (await repo.update('collections', id, patch, version)).data;
 }
 
 export async function reconcile(env, ctx, id) {
   requirePermission(ctx, 'collections.reconcile');
   const repo = createRepository(env, ctx);
+  await guardScope(repo, ctx, 'collections', id);
   return (await repo.call('collection.reconcile', 'collections', { id })).data;
 }

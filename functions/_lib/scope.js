@@ -56,6 +56,8 @@ export function assertScope(ctx, target = {}) {
       target.collector_id, target.collectorId,
       target.current_holder_id, target.holder_id, target.holderId
     ].filter(Boolean);
+    // A row with no holder identity cannot be proven to belong to the caller.
+    if (!holderIds.length) denied();
     if (holderIds.some(function (id) { return String(id) !== String(ctx.actor.userId); })) denied();
     return true;
   }
@@ -69,6 +71,43 @@ export function assertScope(ctx, target = {}) {
   if (branch && summary.branchIds.length &&
       !summary.branchIds.includes(String(branch))) denied();
   return true;
+}
+
+/**
+ * Fetch a single row and verify it belongs to the caller's scope.
+ * Used by detail reads where the row itself must be returned to the caller.
+ */
+export async function getInScope(repo, ctx, entity, id) {
+  const record = (await repo.get(entity, id)).data;
+  assertScope(ctx, record);
+  return record;
+}
+
+/**
+ * Guard a mutation or subresource read against a known parent id.
+ * Global roles skip the extra read; scoped roles fetch and verify ownership
+ * before any write or child listing is allowed.
+ */
+export async function guardScope(repo, ctx, entity, id) {
+  const role = ctx.actor?.role;
+  if (role === ROLES.ADMIN || role === ROLES.AUDITOR) return;
+  await getInScope(repo, ctx, entity, id);
+}
+
+/**
+ * Canonicalise a create payload for scoped roles. A collector must never be
+ * able to attribute a new row to another holder — the edge forces the caller's
+ * identity (matching the Apps Script default) before the record is written.
+ */
+export function scopeForCreate(ctx, data = {}) {
+  const role = ctx.actor?.role;
+  if (role === ROLES.COLLECTOR) {
+    const payload = { ...data, collector_id: ctx.actor.userId };
+    assertScope(ctx, payload);
+    return payload;
+  }
+  assertScope(ctx, data);
+  return data;
 }
 
 /**

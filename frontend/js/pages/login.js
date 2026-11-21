@@ -155,9 +155,11 @@ export default {
       submit.disabled = true;
       submit.textContent = 'Verifying…';
       try {
+        // The challenge token must travel as Bearer (middleware requires it).
+        // Keep mfaToken in the body as well for the documented server contract.
         await completeLogin(await api.post('/auth/mfa/verify', {
           mfaToken: challenge.mfaToken, code, type
-        }));
+        }, { authToken: challenge.mfaToken }));
       } catch (err) {
         showError(root, err.message || 'Verification failed.');
         submit.disabled = false;

@@ -10,6 +10,8 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const ACCESS_TTL_SECONDS = 15 * 60;
 const REFRESH_TTL_SECONDS = 7 * 24 * 60 * 60;
+// MFA challenges are short-lived login artefacts, not full access tokens.
+const MFA_TTL_SECONDS = 5 * 60;
 
 function b64urlEncode(input) {
   const bytes = typeof input === 'string' ? encoder.encode(input) : new Uint8Array(input);
@@ -51,6 +53,7 @@ async function importPublicKey(pem) {
 /** extras is additive: { sid, amr, mfa, audience }. */
 export async function issueAccessToken(env, identity, permissions, extras = {}) {
   const now = Math.floor(Date.now() / 1000);
+  const ttlSeconds = extras.ttlSeconds || ACCESS_TTL_SECONDS;
   const claims = {
     sub: identity.userId,
     username: identity.username,
@@ -60,7 +63,7 @@ export async function issueAccessToken(env, identity, permissions, extras = {}) 
     iss: env.JWT_ISSUER || 'cms-api',
     aud: extras.audience || env.JWT_AUDIENCE || 'cms-web',
     iat: now,
-    exp: now + ACCESS_TTL_SECONDS,
+    exp: now + ttlSeconds,
     jti: crypto.randomUUID()
   };
   if (extras.sid) claims.sid = extras.sid;
@@ -71,7 +74,7 @@ export async function issueAccessToken(env, identity, permissions, extras = {}) 
   const unsigned = `${header}.${payload}`;
   const key = await importPrivateKey(env.JWT_PRIVATE_KEY);
   const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, encoder.encode(unsigned));
-  return { token: `${unsigned}.${b64urlEncode(signature)}`, expiresIn: ACCESS_TTL_SECONDS };
+  return { token: `${unsigned}.${b64urlEncode(signature)}`, expiresIn: ttlSeconds };
 }
 
 /* ---- KV revocation (best-effort, degrades open) -------------------------- */
@@ -101,13 +104,14 @@ async function isRevoked(env, claims) {
   const jtiFlag = await kvGet(env, `revoke:jti:${claims.jti || ''}`);
   if (jtiFlag) return true;
   const revokedAfter = Number(await kvGet(env, `revoke:sub:${claims.sub || ''}`) || 0);
-  return revokedAfter > 0 && Number(claims.iat || 0) < revokedAfter;
+  // Tokens issued in the same second as the logout must also be invalid.
+  return revokedAfter > 0 && Number(claims.iat || 0) <= revokedAfter;
 }
 
 /** Token helpers exported for unit tests and the MFA challenge (Step 3). */
 export async function issueMfaChallengeToken(env, user, methods) {
   return issueAccessToken(env, { ...user, userId: user.userId }, [], {
-    audience: 'cms-mfa', amr: ['pwd'], mfa: false
+    audience: 'cms-mfa', amr: ['pwd'], mfa: false, ttlSeconds: MFA_TTL_SECONDS
   });
 }
 
@@ -292,5 +296,6 @@ export async function sessions(env, ctx) {
 
 export const TOKEN_TTL = Object.freeze({
   access: ACCESS_TTL_SECONDS,
-  refresh: REFRESH_TTL_SECONDS
+  refresh: REFRESH_TTL_SECONDS,
+  mfa: MFA_TTL_SECONDS
 });

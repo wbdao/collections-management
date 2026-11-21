@@ -65,7 +65,13 @@ function match(method, segments, routes) {
     for (let i = 0; i < route.pattern.length; i++) {
       const token = route.pattern[i];
       if (token.startsWith(':')) {
-        params[token.slice(1)] = decodeURIComponent(segments[i]);
+        try {
+          params[token.slice(1)] = decodeURIComponent(segments[i]);
+        } catch (_) {
+          throw Object.assign(new Error('Malformed path parameter'), {
+            code: 'VALIDATION_ERROR', status: 400
+          });
+        }
       } else if (token !== segments[i]) {
         ok = false;
         break;

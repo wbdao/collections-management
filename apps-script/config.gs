@@ -33,7 +33,10 @@ var CONFIG = (function () {
     get docsSpreadsheetId() { return get('DOCS_SPREADSHEET_ID', ''); },
     get auditSpreadsheetId() { return get('AUDIT_SPREADSHEET_ID', ''); },
     get sharedSecret() { return require('GAS_SHARED_SECRET'); },
-    get adminPassword() { return get('BOOTSTRAP_ADMIN_PASSWORD', 'Admin@12345'); },
+    // Never fall back to a known password: creating the first admin requires an
+    // explicit script property. Existing deployments are unaffected because
+    // this getter is only read when seedAdmin() actually creates an admin.
+    get adminPassword() { return require('BOOTSTRAP_ADMIN_PASSWORD'); },
     cacheTtlSeconds: 60,
     lockWaitMs: 10000,
     maxRowsPerRead: 20000,

@@ -4,10 +4,29 @@ import { createRepository } from '../repository.js';
 import { requirePermission } from '../rbac.js';
 import { ROLE_PERMISSIONS } from '../../../shared/constants/enums.js';
 
+/** Public projection: credentials and MFA secrets must never leave the edge. */
+const PUBLIC_USER_FIELDS = [
+  'user_id', 'username', 'full_name', 'email', 'role_id', 'status',
+  'scopes', 'failed_attempts', 'last_login_at', 'version',
+  'created_at', 'updated_at'
+];
+
+export function publicUser(row) {
+  const safe = {};
+  for (const field of PUBLIC_USER_FIELDS) {
+    if (row && row[field] !== undefined) safe[field] = row[field];
+  }
+  return safe;
+}
+
 export async function users(env, ctx, query = {}) {
   requirePermission(ctx, 'users.manage');
   const repo = createRepository(env, ctx);
-  return (await repo.list('users', query)).data;
+  const result = await repo.list('users', query);
+  return {
+    ...result.data,
+    items: (result.data?.items || []).map(publicUser)
+  };
 }
 
 export async function roles(env, ctx) {
